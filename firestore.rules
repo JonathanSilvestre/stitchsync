@@ -10,18 +10,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function familyDoc(familyId) {
-      return get(/databases/$(database)/documents/families/$(familyId));
+    function isFamilyMemberData(data) {
+      return isSignedIn() && request.auth.uid in data.member_uids;
     }
 
-    function isFamilyMember(familyId) {
-      return isSignedIn() &&
-        request.auth.uid in familyDoc(familyId).data.member_uids;
-    }
-
-    function isFamilyOwner(familyId) {
-      return isSignedIn() &&
-        familyDoc(familyId).data.owner_uid == request.auth.uid;
+    function isFamilyOwnerData(data) {
+      return isSignedIn() && data.owner_uid == request.auth.uid;
     }
 
     match /users/{uid} {
@@ -39,14 +33,16 @@ service cloud.firestore {
     }
 
     match /families/{familyId} {
-      allow read: if isFamilyMember(familyId);
+      allow read: if isFamilyMemberData(resource.data);
       allow create: if isSignedIn() &&
         request.resource.data.owner_uid == request.auth.uid &&
         request.auth.uid in request.resource.data.member_uids;
-      allow update, delete: if isFamilyOwner(familyId);
+      allow update, delete: if isFamilyOwnerData(resource.data);
 
       match /pets/{petId} {
-        allow read, create, update, delete: if isFamilyMember(familyId);
+        allow read, create, update, delete: if isFamilyMemberData(
+          get(/databases/$(database)/documents/families/$(familyId)).data
+        );
       }
     }
 

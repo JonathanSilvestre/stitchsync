@@ -1,13 +1,18 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/auth_service.dart';
-import 'manage_account_screen.dart';
-import 'manage_families_screen.dart';
-import 'manage_pets_screen.dart';
+import '../services/family_service.dart';
+import '../services/pet_service.dart';
+import 'calendar_screen.dart';
+import 'family_screen.dart';
+import 'new_event_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTab;
+
+  const HomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -15,272 +20,634 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _auth = AuthService();
-  User? _user;
-  bool _isRefreshing = false;
+  final FamilyService _familyService = FamilyService();
+  final PetService _petService = PetService();
+
+  String _username = 'Sarah';
+  int _currentIndex = 0;
+  String? _selectedFamilyId;
+  String? _selectedPetId;
+  bool _profileLoaded = false;
+
+  static const Color _bg = Color(0xFF060E20);
+  static const Color _surface = Color(0xFF0F1930);
+  static const Color _surfaceHigh = Color(0xFF192540);
+  static const Color _textMain = Color(0xFFDEE5FF);
+  static const Color _textMuted = Color(0xFFA3AAC4);
+  static const Color _primary = Color(0xFF74B1FF);
 
   @override
   void initState() {
     super.initState();
-    _user = _auth.currentUser;
+    _currentIndex = widget.initialTab.clamp(0, 3);
+    _loadUsername();
   }
 
-  Future<void> _refreshVerificationStatus() async {
+  Future<void> _loadUsername() async {
+    Map<String, dynamic>? profile;
+    try {
+      profile = await _auth.getCurrentUserProfile();
+    } catch (_) {
+      profile = null;
+    }
+
+    final profileUsername = (profile?['username'] as String?)?.trim();
+    final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
+    final activePetId = (profile?['active_pet_id'] as String?)?.trim();
+
+    String? fallbackEmailName;
+    final email = _auth.currentUser?.email?.trim();
+    if (email != null && email.contains('@')) {
+      fallbackEmailName = email.split('@').first;
+    }
+
+    final resolvedName = (profileUsername != null && profileUsername.isNotEmpty)
+        ? profileUsername
+        : (fallbackEmailName != null && fallbackEmailName.isNotEmpty)
+            ? fallbackEmailName
+            : 'Sarah';
+
+    if (!mounted) return;
+
     setState(() {
-      _isRefreshing = true;
+      _username = resolvedName;
+      _selectedFamilyId =
+          activeFamilyId != null && activeFamilyId.isNotEmpty ? activeFamilyId : null;
+      _selectedPetId = activePetId != null && activePetId.isNotEmpty ? activePetId : null;
+      _profileLoaded = true;
     });
+  }
 
-    await _auth.refreshCurrentUser();
+  Future<void> _persistActivePetSelection({
+    required String familyId,
+    required String petId,
+  }) async {
+    try {
+      await _auth.saveActivePetSelection(
+        familyId: familyId,
+        petId: petId,
+      );
+    } catch (_) {
+      // The selection still changes locally even if persistence fails.
+    }
+  }
 
-    if (!mounted) {
+  Future<void> _openQuickActions({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                _QuickActionTile(
+                  icon: Icons.event_rounded,
+                  title: 'Add Event',
+                  subtitle: 'Create a new schedule item',
+                  onTap: () => Navigator.pop(sheetContext, 'add_event'),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  icon: Icons.pets_rounded,
+                  title: 'Change Pet',
+                  subtitle: 'Switch the active companion',
+                  onTap: () => Navigator.pop(sheetContext, 'change_pet'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'add_event') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const NewEventScreen()),
+      );
       return;
     }
 
-    setState(() {
-      _user = _auth.currentUser;
-      _isRefreshing = false;
-    });
+    if (action == 'change_pet') {
+      await _openChangePetSheet(familyId: familyId, pets: pets);
+    }
   }
 
-  Future<void> _resendVerificationEmail() async {
-    await _auth.sendVerificationEmail();
-
-    if (!mounted) {
+  Future<void> _openChangePetSheet({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) async {
+    if (pets.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No pets available yet')),
+      );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reenviamos el correo de verificación')),
+    final selectedPetId = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Change Pet',
+                        style: TextStyle(
+                          color: _textMain,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close, color: _textMuted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Pick your active pet for the home dashboard.',
+                  style: TextStyle(color: _textMuted),
+                ),
+                const SizedBox(height: 14),
+                ...pets.map((petDoc) {
+                  final petData = petDoc.data();
+                  final name = (petData['name'] as String?) ?? 'Pet';
+                  final breed = (petData['breed'] as String?) ?? 'Unknown';
+                  final photoUrl = (petData['photo_url'] as String?) ?? '';
+                  final isSelected = petDoc.id == _selectedPetId;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(sheetContext, petDoc.id),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? _surfaceHigh : _bg,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: _surfaceHigh,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: photoUrl.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(14),
+                                      child: Image.network(photoUrl, fit: BoxFit.cover),
+                                    )
+                                  : const Icon(Icons.pets, color: _primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      color: _textMain,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    breed,
+                                    style: const TextStyle(
+                                      color: _textMuted,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(Icons.check_circle, color: _primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selectedPetId == null) return;
+
+    setState(() {
+      _selectedFamilyId = familyId;
+      _selectedPetId = selectedPetId;
+    });
+
+    _persistActivePetSelection(
+      familyId: familyId,
+      petId: selectedPetId,
+    );
+  }
+
+  Widget _buildHomeBody({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) {
+    QueryDocumentSnapshot<Map<String, dynamic>>? selectedPet;
+    if (pets.isNotEmpty) {
+      final selectedIndex = pets.indexWhere((pet) => pet.id == _selectedPetId);
+      selectedPet = selectedIndex >= 0 ? pets[selectedIndex] : pets.first;
+    }
+
+    final selectedData = selectedPet?.data() ?? const <String, dynamic>{};
+    final selectedName = (selectedData['name'] as String?)?.trim().isNotEmpty == true
+        ? (selectedData['name'] as String).trim()
+        : 'Stitch';
+    final selectedBreed = (selectedData['breed'] as String?)?.trim().isNotEmpty == true
+        ? (selectedData['breed'] as String).trim()
+        : 'Unknown breed';
+    final selectedPhoto = (selectedData['photo_url'] as String?) ?? '';
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF0A1730),
+                  _bg,
+                  const Color(0xFF050A17),
+                ],
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: -120,
+          left: -100,
+          child: Container(
+            width: 380,
+            height: 380,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color.fromRGBO(116, 177, 255, 0.10),
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Column(
+            children: [
+              const _HomeTopBar(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good morning, $_username',
+                        style: const TextStyle(
+                          color: _textMuted,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Everything\'s ready for\nyour companion today.',
+                        style: TextStyle(
+                          color: _textMain,
+                          fontSize: 48,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.7,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _DogHeroCard(
+                        petName: selectedName,
+                        breed: selectedBreed,
+                        photoUrl: selectedPhoto,
+                        petCount: pets.length,
+                      ),
+                      const SizedBox(height: 30),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Today\'s Schedule',
+                            style: TextStyle(
+                              color: _textMain,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            'See all',
+                            style: TextStyle(
+                              color: Color(0xFFA3AAC4),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 54),
+                            child: Column(
+                              children: [
+                                _ScheduleItem(
+                                  icon: Icons.directions_walk,
+                                  iconBg: Color(0xFF1F3258),
+                                  iconColor: Color(0xFF74B1FF),
+                                  title: 'Walk at 2 PM',
+                                  subtitle: 'Assigned to: Marcus',
+                                ),
+                                SizedBox(height: 14),
+                                _ScheduleItem(
+                                  icon: Icons.restaurant,
+                                  iconBg: Color(0xFF3B2F23),
+                                  iconColor: Color(0xFFF0C686),
+                                  title: 'Feeding at 5 PM',
+                                  subtitle: 'Evening Meal • Kibble + Topper',
+                                ),
+                                SizedBox(height: 14),
+                                _ScheduleItem(
+                                  icon: Icons.medication,
+                                  iconBg: Color(0xFF263D35),
+                                  iconColor: Color(0xFF95DEBA),
+                                  title: 'Medication at 8 PM',
+                                  subtitle: 'Monthly flea prevention',
+                                  highlighted: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          right: 22,
+          bottom: 108,
+          child: _FloatingAddButton(
+            onPressed: () => _openQuickActions(
+              familyId: familyId,
+              pets: pets,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isVerified = _user?.emailVerified ?? false;
+    if (_currentIndex == 3) {
+      return ProfileScreen(
+        onGoHome: () {
+          setState(() {
+            _currentIndex = 0;
+          });
+        },
+      );
+    }
+
+    if (_currentIndex == 1) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: CalendarTabContent(
+          onNewEvent: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NewEventScreen(),
+              ),
+            );
+          },
+        ),
+        bottomNavigationBar: _BottomNavBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+        ),
+      );
+    }
+
+    if (_currentIndex == 2) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: const FamilyTabContent(),
+        bottomNavigationBar: _BottomNavBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+        ),
+      );
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
-      appBar: AppBar(
-        title: const Text('StitchSync 🐶'),
-        backgroundColor: const Color(0xFF143A5A),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await _auth.logout();
+      backgroundColor: _bg,
+      body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+        stream: _familyService.streamFamiliesForCurrentUser(),
+        builder: (context, familySnapshot) {
+          final families = familySnapshot.data ?? const [];
+
+          if (familySnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (families.isEmpty) {
+            return Center(
+              child: Text(
+                'Create a family to start managing pets',
+                style: TextStyle(color: _textMuted.withValues(alpha: 0.9)),
+              ),
+            );
+          }
+
+          final familyId = _selectedFamilyId != null &&
+                  families.any((family) => family.id == _selectedFamilyId)
+              ? _selectedFamilyId!
+              : families.first.id;
+
+          if (_profileLoaded && _selectedFamilyId != familyId) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {
+                _selectedFamilyId = familyId;
+              });
+            });
+          }
+
+          return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            stream: _petService.streamPets(familyId),
+            builder: (context, petSnapshot) {
+              final pets = petSnapshot.data ?? const [];
+
+              if (petSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (_profileLoaded && pets.isNotEmpty) {
+                final validPet = _selectedPetId != null &&
+                    pets.any((pet) => pet.id == _selectedPetId);
+                if (!validPet) {
+                  final nextPetId = pets.first.id;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    setState(() {
+                      _selectedFamilyId = familyId;
+                      _selectedPetId = nextPetId;
+                    });
+                    _persistActivePetSelection(
+                      familyId: familyId,
+                      petId: nextPetId,
+                    );
+                  });
+                }
+              }
+
+              return _buildHomeBody(
+                familyId: familyId,
+                pets: pets,
+              );
             },
-          )
-        ],
+          );
+        },
       ),
-      drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                color: const Color(0xFF143A5A),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Menú principal',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _user?.email ?? '',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              ExpansionTile(
-                title: const Text('Administración'),
-                leading: const Icon(Icons.settings_outlined),
-                childrenPadding: const EdgeInsets.only(left: 12),
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.manage_accounts),
-                    title: const Text('Administrar cuenta'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManageAccountScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.groups_outlined),
-                    title: const Text('Administrar familias'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManageFamiliesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.pets_outlined),
-                    title: const Text('Administrar mascotas'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManagePetsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              const Spacer(),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Cerrar sesión'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _auth.logout();
-                },
-              ),
-            ],
-          ),
+      bottomNavigationBar: _BottomNavBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _HomeScreenState._surfaceHigh,
+          borderRadius: BorderRadius.circular(18),
         ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refreshVerificationStatus,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
+        child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(22),
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1D6A7B), Color(0xFF143A5A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF143A5A).withValues(alpha: 0.18),
-                    blurRadius: 24,
-                    offset: const Offset(0, 14),
-                  ),
-                ],
+                color: _HomeScreenState._bg,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Bienvenido a StitchSync',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _user?.email ?? 'Tu cuenta ya está lista para usar',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Icon(
-                        isVerified ? Icons.verified : Icons.mail_outline,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          isVerified
-                              ? 'Correo confirmado'
-                              : 'Te enviamos un correo para confirmar tu cuenta',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (!isVerified) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Puedes entrar a la app mientras confirmas tu correo. Si no encuentras el mensaje, vuelve a enviarlo.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    OutlinedButton(
-                      onPressed: _resendVerificationEmail,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white70),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: const Text('Reenviar verificación'),
-                    ),
-                  ],
-                ],
-              ),
+              child: Icon(icon, color: _HomeScreenState._primary, size: 24),
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Próximos pasos',
-                    style: TextStyle(
-                      fontSize: 18,
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _HomeScreenState._textMain,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF17324D),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _FeatureTile(
-                    icon: Icons.event_available,
-                    title: 'Calendario compartido',
-                    subtitle: 'Eventos familiares, paseos y recordatorios en un solo lugar.',
-                  ),
-                  _FeatureTile(
-                    icon: Icons.pets,
-                    title: 'Perfil de mascotas',
-                    subtitle: 'Datos, cuidados y notas importantes de cada mascota.',
-                  ),
-                  _FeatureTile(
-                    icon: Icons.lock_outline,
-                    title: 'Acceso seguro',
-                    subtitle: _isRefreshing
-                        ? 'Actualizando estado de verificación...'
-                        : 'Tu sesión está sincronizada con Firebase Auth.',
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: _HomeScreenState._textMuted,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -292,33 +659,283 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _FeatureTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
+class _HomeTopBar extends StatelessWidget {
+  const _HomeTopBar();
 
-  const _FeatureTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(25, 37, 64, 0.60),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: const BoxDecoration(
+              color: Color(0xFF1D2A48),
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(7),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/icon/StitchSyncIcon.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'StitchSync',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Color(0xFF74B1FF),
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+          const Icon(Icons.notifications, color: Color(0xFFA3AAC4), size: 26),
+        ],
+      ),
+    );
+  }
+}
+
+class _DogHeroCard extends StatelessWidget {
+  final String petName;
+  final String breed;
+  final String photoUrl;
+  final int petCount;
+
+  const _DogHeroCard({
+    required this.petName,
+    required this.breed,
+    required this.photoUrl,
+    required this.petCount,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
+    return Container(
+      decoration: BoxDecoration(
+        color: _HomeScreenState._surface,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 14),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: SizedBox(
+              height: 250,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF5A4025),
+                          Color(0xFF342316),
+                          Color(0xFF221810),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: photoUrl.isNotEmpty
+                        ? ClipOval(
+                            child: Image.network(
+                              photoUrl,
+                              width: 140,
+                              height: 140,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Opacity(
+                            opacity: 0.88,
+                            child: Image.asset(
+                              'assets/icon/StitchSyncIcon.png',
+                              width: 140,
+                              height: 140,
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    bottom: 66,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFBAECCB),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text(
+                        'AT HOME',
+                        style: TextStyle(
+                          color: Color(0xFF24553F),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    bottom: 20,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current Pet: $petName',
+                          style: const TextStyle(
+                            color: Color(0xFFDEE5FF),
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          breed,
+                          style: const TextStyle(
+                            color: Color(0xFFA3AAC4),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _PetAvatarBubble(name: petName, photoUrl: photoUrl),
+              const SizedBox(width: 6),
+              _PetAvatarBubble(name: 'A', photoUrl: ''),
+              const SizedBox(width: 6),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF273247),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '+${petCount > 1 ? petCount - 1 : 0}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFDEE5FF),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Text(
+                'View Details',
+                style: TextStyle(
+                  color: Color(0xFF74B1FF),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.pets, color: Color(0xFF6F7C97), size: 28),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PetAvatarBubble extends StatelessWidget {
+  final String name;
+  final String photoUrl;
+
+  const _PetAvatarBubble({
+    required this.name,
+    required this.photoUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: const BoxDecoration(
+        color: Color(0xFF213458),
+        shape: BoxShape.circle,
+      ),
+      child: photoUrl.isNotEmpty
+          ? ClipOval(
+              child: Image.network(photoUrl, fit: BoxFit.cover),
+            )
+          : Center(
+              child: Text(
+                name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                style: const TextStyle(
+                  color: Color(0xFF74B1FF),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _ScheduleItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final bool highlighted;
+
+  const _ScheduleItem({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _HomeScreenState._surfaceHigh,
+        borderRadius: BorderRadius.circular(22),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 62,
+            height: 62,
             decoration: BoxDecoration(
-              color: const Color(0xFFE9F3F7),
-              borderRadius: BorderRadius.circular(14),
+              color: iconBg,
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(icon, color: const Color(0xFF1D6A7B)),
+            child: Icon(icon, color: iconColor, size: 32),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,24 +943,163 @@ class _FeatureTile extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
+                    color: Color(0xFFDEE5FF),
+                    fontSize: 19,
                     fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: Color(0xFF17324D),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: const TextStyle(
-                    color: Color(0xFF60748A),
-                    height: 1.35,
+                    color: Color(0xFFA3AAC4),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
+          ),
+          const Icon(Icons.more_vert, color: Color(0xFF6E7890)),
+        ],
+      ),
+    );
+  }
+}
+
+class _FloatingAddButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _FloatingAddButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF74B1FF), Color(0xFF5FA3F6)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Color.fromRGBO(95, 163, 246, 0.35),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Color(0xFF0A1C38), size: 34),
+      ),
+    );
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final Function(int) onTap;
+
+  const _BottomNavBar({
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1930),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Row(
+        children: [
+          _NavItem(
+            icon: Icons.home,
+            label: 'Home',
+            selected: currentIndex == 0,
+            onTap: () => onTap(0),
+          ),
+          _NavItem(
+            icon: Icons.calendar_month,
+            label: 'Calendar',
+            selected: currentIndex == 1,
+            onTap: () => onTap(1),
+          ),
+          _NavItem(
+            icon: Icons.groups,
+            label: 'Family',
+            selected: currentIndex == 2,
+            onTap: () => onTap(2),
+          ),
+          _NavItem(
+            icon: Icons.person,
+            label: 'Profile',
+            selected: currentIndex == 3,
+            onTap: () => onTap(3),
           ),
         ],
       ),
     );
   }
 }
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = selected ? const Color(0xFF192540) : Colors.transparent;
+    final fg = selected ? const Color(0xFF74B1FF) : const Color(0xFF8B98AE);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: fg, size: 24),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

@@ -26,20 +26,22 @@ class FamilyService {
         .map((snapshot) => snapshot.docs);
   }
 
-  Future<void> createFamily(String familyName) async {
+  Future<String> createFamily(String familyName) async {
     final uid = currentUid;
 
     if (uid == null) {
       throw FirebaseAuthException(code: 'user-not-found');
     }
 
-    await _families.add({
+    final familyRef = await _families.add({
       'name': familyName.trim(),
       'owner_uid': uid,
       'member_uids': [uid],
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     });
+
+    return familyRef.id;
   }
 
   Future<void> updateFamilyName({

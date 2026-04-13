@@ -8,6 +8,8 @@ class AuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FamilyService _familyService = FamilyService();
 
+  User? get currentUser => _auth.currentUser;
+
   CollectionReference<Map<String, dynamic>> get _usersCollection =>
       _firestore.collection('users');
   CollectionReference<Map<String, dynamic>> get _usernamesCollection =>
@@ -203,6 +205,66 @@ class AuthService {
     });
   }
 
+  Future<void> updateUserProfile({required String username}) async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'No hay sesión activa.',
+      );
+    }
+
+    final normalizedUsername = username.trim().toLowerCase();
+    if (normalizedUsername.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'invalid-argument',
+        message: 'El nombre de usuario no puede estar vacío.',
+      );
+    }
+
+    final userRef = _usersCollection.doc(user.uid);
+    final usernameRef = _usernamesCollection.doc(normalizedUsername);
+    final currentUserDoc = await userRef.get();
+    final currentUsername =
+        (currentUserDoc.data()?['username_lower'] as String?) ?? '';
+    final oldUsernameRef = currentUsername.isEmpty
+        ? null
+        : _usernamesCollection.doc(currentUsername);
+
+    await _firestore.runTransaction((tx) async {
+      if (normalizedUsername != currentUsername) {
+        final usernameSnap = await tx.get(usernameRef);
+        if (usernameSnap.exists) {
+          throw FirebaseAuthException(
+            code: 'username-already-in-use',
+            message: 'Ese nombre de usuario ya está en uso.',
+          );
+        }
+
+        tx.set(usernameRef, {
+          'uid': user.uid,
+          'email': user.email?.toLowerCase(),
+          'created_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+
+        if (oldUsernameRef != null) {
+          tx.delete(oldUsernameRef);
+        }
+      }
+
+      tx.set(userRef, {
+        'username': username.trim(),
+        'username_lower': normalizedUsername,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+
+    await user.updateDisplayName(username.trim());
+    await refreshCurrentUser();
+  }
+
   Future<Map<String, dynamic>?> getCurrentUserProfile() async {
     final uid = _auth.currentUser?.uid;
 
@@ -212,6 +274,26 @@ class AuthService {
 
     final doc = await _usersCollection.doc(uid).get();
     return doc.data();
+  }
+
+  Future<void> saveActivePetSelection({
+    required String familyId,
+    required String petId,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+
+    if (uid == null) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'No hay sesión activa.',
+      );
+    }
+
+    await _usersCollection.doc(uid).set({
+      'active_family_id': familyId,
+      'active_pet_id': petId,
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<String?> _resolveEmailFromIdentifier(String usernameOrEmail) async {
@@ -258,9 +340,6 @@ class AuthService {
         return error.message ?? 'Ocurrió un error de autenticación.';
     }
   }
-
-  // Usuario actual
-  User? get currentUser => _auth.currentUser;
 
   bool get isEmailVerified => _auth.currentUser?.emailVerified ?? false;
 }
