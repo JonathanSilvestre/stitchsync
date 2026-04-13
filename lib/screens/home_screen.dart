@@ -1,10 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
-import 'manage_account_screen.dart';
-import 'manage_families_screen.dart';
-import 'manage_pets_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,310 +12,440 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _auth = AuthService();
-  User? _user;
-  bool _isRefreshing = false;
+  String _username = 'Sarah';
+  int _currentIndex = 0;
+
+  static const Color _bg = Color(0xFF060E20);
+  static const Color _surface = Color(0xFF0F1930);
+  static const Color _surfaceHigh = Color(0xFF192540);
+  static const Color _textMain = Color(0xFFDEE5FF);
+  static const Color _textMuted = Color(0xFFA3AAC4);
 
   @override
   void initState() {
     super.initState();
-    _user = _auth.currentUser;
+    _loadUsername();
   }
 
-  Future<void> _refreshVerificationStatus() async {
-    setState(() {
-      _isRefreshing = true;
-    });
+  Future<void> _loadUsername() async {
+    final profile = await _auth.getCurrentUserProfile();
+    final profileUsername = (profile?['username'] as String?)?.trim();
 
-    await _auth.refreshCurrentUser();
+    String? fallbackEmailName;
+    final email = _auth.currentUser?.email?.trim();
+    if (email != null && email.contains('@')) {
+      fallbackEmailName = email.split('@').first;
+    }
+
+    final resolvedName = (profileUsername != null && profileUsername.isNotEmpty)
+        ? profileUsername
+        : (fallbackEmailName != null && fallbackEmailName.isNotEmpty)
+            ? fallbackEmailName
+            : 'Sarah';
 
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _user = _auth.currentUser;
-      _isRefreshing = false;
+      _username = resolvedName;
     });
-  }
-
-  Future<void> _resendVerificationEmail() async {
-    await _auth.sendVerificationEmail();
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reenviamos el correo de verificación')),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isVerified = _user?.emailVerified ?? false;
+    if (_currentIndex == 3) {
+      return const ProfileScreen();
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
-      appBar: AppBar(
-        title: const Text('StitchSync 🐶'),
-        backgroundColor: const Color(0xFF143A5A),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await _auth.logout();
-            },
-          )
-        ],
-      ),
-      drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                color: const Color(0xFF143A5A),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Menú principal',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _user?.email ?? '',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              ExpansionTile(
-                title: const Text('Administración'),
-                leading: const Icon(Icons.settings_outlined),
-                childrenPadding: const EdgeInsets.only(left: 12),
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.manage_accounts),
-                    title: const Text('Administrar cuenta'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManageAccountScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.groups_outlined),
-                    title: const Text('Administrar familias'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManageFamiliesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.pets_outlined),
-                    title: const Text('Administrar mascotas'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ManagePetsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              const Spacer(),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Cerrar sesión'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _auth.logout();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refreshVerificationStatus,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(22),
+      backgroundColor: _bg,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1D6A7B), Color(0xFF143A5A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF0A1730),
+                    _bg,
+                    const Color(0xFF050A17),
+                  ],
+                  stops: const [0.0, 0.55, 1.0],
                 ),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF143A5A).withValues(alpha: 0.18),
-                    blurRadius: 24,
-                    offset: const Offset(0, 14),
-                  ),
-                ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Bienvenido a StitchSync',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _user?.email ?? 'Tu cuenta ya está lista para usar',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Icon(
-                        isVerified ? Icons.verified : Icons.mail_outline,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          isVerified
-                              ? 'Correo confirmado'
-                              : 'Te enviamos un correo para confirmar tu cuenta',
+            ),
+          ),
+          Positioned(
+            top: -120,
+            left: -100,
+            child: Container(
+              width: 380,
+              height: 380,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color.fromRGBO(116, 177, 255, 0.10),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                const _HomeTopBar(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Good morning, $_username',
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                            color: _textMuted,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (!isVerified) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Puedes entrar a la app mientras confirmas tu correo. Si no encuentras el mensaje, vuelve a enviarlo.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    OutlinedButton(
-                      onPressed: _resendVerificationEmail,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white70),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Everything\'s ready for\nFido today.',
+                          style: TextStyle(
+                            color: _textMain,
+                            fontSize: 48,
+                            height: 1.05,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.7,
+                          ),
                         ),
-                      ),
-                      child: const Text('Reenviar verificación'),
+                        const SizedBox(height: 22),
+                        const _DogHeroCard(),
+                        const SizedBox(height: 30),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Today\'s Schedule',
+                              style: TextStyle(
+                                color: _textMain,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'See all',
+                              style: TextStyle(
+                                color: Color(0xFFA3AAC4),
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: const [
+                            Padding(
+                              padding: EdgeInsets.only(bottom: 54),
+                              child: Column(
+                                children: [
+                                  _ScheduleItem(
+                                    icon: Icons.directions_walk,
+                                    iconBg: Color(0xFF1F3258),
+                                    iconColor: Color(0xFF74B1FF),
+                                    title: 'Walk at 2 PM',
+                                    subtitle: 'Assigned to: Marcus',
+                                  ),
+                                  SizedBox(height: 14),
+                                  _ScheduleItem(
+                                    icon: Icons.restaurant,
+                                    iconBg: Color(0xFF3B2F23),
+                                    iconColor: Color(0xFFF0C686),
+                                    title: 'Feeding at 5 PM',
+                                    subtitle: 'Evening Meal • Kibble + Topper',
+                                  ),
+                                  SizedBox(height: 14),
+                                  _ScheduleItem(
+                                    icon: Icons.medication,
+                                    iconBg: Color(0xFF263D35),
+                                    iconColor: Color(0xFF95DEBA),
+                                    title: 'Medication at 8 PM',
+                                    subtitle: 'Monthly flea prevention',
+                                    highlighted: true,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              right: 2,
+                              bottom: 0,
+                              child: _FloatingAddButton(),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Próximos pasos',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF17324D),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _FeatureTile(
-                    icon: Icons.event_available,
-                    title: 'Calendario compartido',
-                    subtitle: 'Eventos familiares, paseos y recordatorios en un solo lugar.',
-                  ),
-                  _FeatureTile(
-                    icon: Icons.pets,
-                    title: 'Perfil de mascotas',
-                    subtitle: 'Datos, cuidados y notas importantes de cada mascota.',
-                  ),
-                  _FeatureTile(
-                    icon: Icons.lock_outline,
-                    title: 'Acceso seguro',
-                    subtitle: _isRefreshing
-                        ? 'Actualizando estado de verificación...'
-                        : 'Tu sesión está sincronizada con Firebase Auth.',
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _BottomNavBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
       ),
     );
   }
 }
 
-class _FeatureTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
+class _HomeTopBar extends StatelessWidget {
+  const _HomeTopBar();
 
-  const _FeatureTile({
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(25, 37, 64, 0.60),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: const BoxDecoration(
+              color: Color(0xFF1D2A48),
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(7),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/icon/StitchSyncIcon.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'StitchSync',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Color(0xFF74B1FF),
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+          const Icon(Icons.notifications, color: Color(0xFFA3AAC4), size: 26),
+        ],
+      ),
+    );
+  }
+}
+
+class _DogHeroCard extends StatelessWidget {
+  const _DogHeroCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _HomeScreenState._surface,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 14),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: SizedBox(
+              height: 250,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF5A4025),
+                          Color(0xFF342316),
+                          Color(0xFF221810),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Opacity(
+                      opacity: 0.88,
+                      child: Image.asset(
+                        'assets/icon/StitchSyncIcon.png',
+                        width: 140,
+                        height: 140,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    bottom: 66,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFBAECCB),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text(
+                        'AT HOME',
+                        style: TextStyle(
+                          color: Color(0xFF24553F),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Positioned(
+                    left: 16,
+                    bottom: 20,
+                    child: Text(
+                      'Current Dog: Stitch',
+                      style: TextStyle(
+                        color: Color(0xFFDEE5FF),
+                        fontSize: 23,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _AvatarCircle(
+                color: const Color(0xFF213458),
+                icon: Icons.person,
+                iconColor: const Color(0xFF74B1FF),
+              ),
+              const SizedBox(width: 6),
+              _AvatarCircle(
+                color: const Color(0xFF2B3343),
+                icon: Icons.person,
+                iconColor: const Color(0xFFA3AAC4),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF273247),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '+2',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFDEE5FF),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Text(
+                'View Details',
+                style: TextStyle(
+                  color: Color(0xFF74B1FF),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.pets, color: Color(0xFF6F7C97), size: 28),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvatarCircle extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final Color iconColor;
+
+  const _AvatarCircle({
+    required this.color,
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, color: iconColor, size: 22),
+    );
+  }
+}
+
+class _ScheduleItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final bool highlighted;
+
+  const _ScheduleItem({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _HomeScreenState._surfaceHigh,
+        borderRadius: BorderRadius.circular(22),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 62,
+            height: 62,
             decoration: BoxDecoration(
-              color: const Color(0xFFE9F3F7),
-              borderRadius: BorderRadius.circular(14),
+              color: iconBg,
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(icon, color: const Color(0xFF1D6A7B)),
+            child: Icon(icon, color: iconColor, size: 32),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,23 +453,156 @@ class _FeatureTile extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
+                    color: Color(0xFFDEE5FF),
+                    fontSize: 19,
                     fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: Color(0xFF17324D),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: const TextStyle(
-                    color: Color(0xFF60748A),
-                    height: 1.35,
+                    color: Color(0xFFA3AAC4),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
+          const Icon(Icons.more_vert, color: Color(0xFF6E7890)),
         ],
+      ),
+    );
+  }
+}
+
+class _FloatingAddButton extends StatelessWidget {
+  const _FloatingAddButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 88,
+      height: 88,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF74B1FF), Color(0xFF5FA3F6)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color.fromRGBO(95, 163, 246, 0.35),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Icon(Icons.add, color: Color(0xFF0A1C38), size: 44),
+    );
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final Function(int) onTap;
+
+  const _BottomNavBar({
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1930),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Row(
+        children: [
+          _NavItem(
+            icon: Icons.home,
+            label: 'Home',
+            selected: currentIndex == 0,
+            onTap: () => onTap(0),
+          ),
+          _NavItem(
+            icon: Icons.calendar_month,
+            label: 'Calendar',
+            selected: currentIndex == 1,
+            onTap: () => onTap(1),
+          ),
+          _NavItem(
+            icon: Icons.groups,
+            label: 'Family',
+            selected: currentIndex == 2,
+            onTap: () => onTap(2),
+          ),
+          _NavItem(
+            icon: Icons.person,
+            label: 'Profile',
+            selected: currentIndex == 3,
+            onTap: () => onTap(3),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = selected ? const Color(0xFF192540) : Colors.transparent;
+    final fg = selected ? const Color(0xFF74B1FF) : const Color(0xFF8B98AE);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: fg, size: 24),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
