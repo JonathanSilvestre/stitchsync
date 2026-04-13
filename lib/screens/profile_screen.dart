@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'account_settings_screen.dart';
 import 'home_screen.dart';
+import 'manage_family_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onGoHome;
@@ -59,18 +61,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (BuildContext context) => AlertDialog(
         backgroundColor: _surfaceContainer,
         title: const Text(
-          'Cerrar sesión',
+          'Log Out',
           style: TextStyle(color: _textMain, fontWeight: FontWeight.bold),
         ),
         content: const Text(
-          '¿Estás seguro de que deseas cerrar sesión?',
+          'Are you sure you want to log out?',
           style: TextStyle(color: _textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text(
-              'Cancelar',
+              'Cancel',
               style: TextStyle(color: _primary),
             ),
           ),
@@ -84,7 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             },
             child: const Text(
-              'Cerrar sesión',
+              'Log Out',
               style: TextStyle(color: _errorRed),
             ),
           ),
@@ -189,7 +191,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text(
-          'Perfil',
+          'Profile',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
@@ -251,7 +253,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _userName ?? 'Usuario',
+                  _userName ?? 'User',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -262,7 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Administrador Familia',
+                  'Family Administrator',
                   style: TextStyle(
                     fontSize: 14,
                     color: _textMuted,
@@ -276,7 +278,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Admin de Familia',
+                    'ADMIN',
                     style: TextStyle(
                       fontSize: 12,
                       color: _primary,
@@ -297,7 +299,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'SINCRONIZANDO CON',
+          'SYNCING WITH',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -342,7 +344,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Caniche Mix • 2y',
+                      'Poodle Mix • 2y',
                       style: TextStyle(
                         fontSize: 13,
                         color: _textMuted,
@@ -371,7 +373,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'MIEMBROS DE LA FAMILIA',
+              'FAMILY MEMBERS',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -380,7 +382,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const Text(
-              '4 activos',
+              '4 active',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -459,7 +461,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'PREFERENCIAS',
+          'PREFERENCES',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -470,20 +472,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.people,
-          title: 'Gestionar Miembros',
-          subtitle: 'Agregá o remové miembros',
+          title: 'Manage Family & Pets',
+          subtitle: 'Add or remove members and pets',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ManageFamilyScreen(),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.notifications,
-          title: 'Recordatorios de Alimentación',
-          subtitle: 'Configurá horarios y notificaciones',
+          title: 'Feeding Reminders',
+          subtitle: 'Manage schedules and notifications',
         ),
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.settings,
-          title: 'Configuración de Cuenta',
-          subtitle: 'Email, contraseña y seguridad',
+          title: 'Account Settings',
+          subtitle: 'Email, password and security',
+                 onTap: () {
+                   Navigator.of(context).push(
+                     MaterialPageRoute(
+                       builder: (_) => const AccountSettingsScreen(),
+                     ),
+                   );
+                 },
         ),
       ],
     );
@@ -493,6 +509,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
+    VoidCallback? onTap,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -500,7 +517,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: _surfaceContainer,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Row(
         children: [
           Container(
             width: 44,
@@ -546,6 +566,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -572,9 +593,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               size: 20,
             ),
             const SizedBox(width: 12),
-            Text(
-              'Cerrar Sesión',
-              style: const TextStyle(
+            const Text(
+              'Log Out',
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: _errorRed,

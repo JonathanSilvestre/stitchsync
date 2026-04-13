@@ -1,6 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../services/family_service.dart';
+import '../services/pet_service.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'new_event_screen.dart';
@@ -17,14 +20,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _auth = AuthService();
+  final FamilyService _familyService = FamilyService();
+  final PetService _petService = PetService();
+
   String _username = 'Sarah';
   int _currentIndex = 0;
+  String? _selectedFamilyId;
+  String? _selectedPetId;
+  bool _profileLoaded = false;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
   static const Color _surfaceHigh = Color(0xFF192540);
   static const Color _textMain = Color(0xFFDEE5FF);
   static const Color _textMuted = Color(0xFFA3AAC4);
+  static const Color _primary = Color(0xFF74B1FF);
 
   @override
   void initState() {
@@ -34,8 +44,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadUsername() async {
-    final profile = await _auth.getCurrentUserProfile();
+    Map<String, dynamic>? profile;
+    try {
+      profile = await _auth.getCurrentUserProfile();
+    } catch (_) {
+      profile = null;
+    }
+
     final profileUsername = (profile?['username'] as String?)?.trim();
+    final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
+    final activePetId = (profile?['active_pet_id'] as String?)?.trim();
 
     String? fallbackEmailName;
     final email = _auth.currentUser?.email?.trim();
@@ -49,13 +67,397 @@ class _HomeScreenState extends State<HomeScreen> {
             ? fallbackEmailName
             : 'Sarah';
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
     setState(() {
       _username = resolvedName;
+      _selectedFamilyId =
+          activeFamilyId != null && activeFamilyId.isNotEmpty ? activeFamilyId : null;
+      _selectedPetId = activePetId != null && activePetId.isNotEmpty ? activePetId : null;
+      _profileLoaded = true;
     });
+  }
+
+  Future<void> _persistActivePetSelection({
+    required String familyId,
+    required String petId,
+  }) async {
+    try {
+      await _auth.saveActivePetSelection(
+        familyId: familyId,
+        petId: petId,
+      );
+    } catch (_) {
+      // The selection still changes locally even if persistence fails.
+    }
+  }
+
+  Future<void> _openQuickActions({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                _QuickActionTile(
+                  icon: Icons.event_rounded,
+                  title: 'Add Event',
+                  subtitle: 'Create a new schedule item',
+                  onTap: () => Navigator.pop(sheetContext, 'add_event'),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  icon: Icons.pets_rounded,
+                  title: 'Change Pet',
+                  subtitle: 'Switch the active companion',
+                  onTap: () => Navigator.pop(sheetContext, 'change_pet'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'add_event') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const NewEventScreen()),
+      );
+      return;
+    }
+
+    if (action == 'change_pet') {
+      await _openChangePetSheet(familyId: familyId, pets: pets);
+    }
+  }
+
+  Future<void> _openChangePetSheet({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) async {
+    if (pets.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No pets available yet')),
+      );
+      return;
+    }
+
+    final selectedPetId = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Change Pet',
+                        style: TextStyle(
+                          color: _textMain,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close, color: _textMuted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Pick your active pet for the home dashboard.',
+                  style: TextStyle(color: _textMuted),
+                ),
+                const SizedBox(height: 14),
+                ...pets.map((petDoc) {
+                  final petData = petDoc.data();
+                  final name = (petData['name'] as String?) ?? 'Pet';
+                  final breed = (petData['breed'] as String?) ?? 'Unknown';
+                  final photoUrl = (petData['photo_url'] as String?) ?? '';
+                  final isSelected = petDoc.id == _selectedPetId;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(sheetContext, petDoc.id),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? _surfaceHigh : _bg,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: _surfaceHigh,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: photoUrl.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(14),
+                                      child: Image.network(photoUrl, fit: BoxFit.cover),
+                                    )
+                                  : const Icon(Icons.pets, color: _primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      color: _textMain,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    breed,
+                                    style: const TextStyle(
+                                      color: _textMuted,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(Icons.check_circle, color: _primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selectedPetId == null) return;
+
+    setState(() {
+      _selectedFamilyId = familyId;
+      _selectedPetId = selectedPetId;
+    });
+
+    _persistActivePetSelection(
+      familyId: familyId,
+      petId: selectedPetId,
+    );
+  }
+
+  Widget _buildHomeBody({
+    required String familyId,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+  }) {
+    QueryDocumentSnapshot<Map<String, dynamic>>? selectedPet;
+    if (pets.isNotEmpty) {
+      final selectedIndex = pets.indexWhere((pet) => pet.id == _selectedPetId);
+      selectedPet = selectedIndex >= 0 ? pets[selectedIndex] : pets.first;
+    }
+
+    final selectedData = selectedPet?.data() ?? const <String, dynamic>{};
+    final selectedName = (selectedData['name'] as String?)?.trim().isNotEmpty == true
+        ? (selectedData['name'] as String).trim()
+        : 'Stitch';
+    final selectedBreed = (selectedData['breed'] as String?)?.trim().isNotEmpty == true
+        ? (selectedData['breed'] as String).trim()
+        : 'Unknown breed';
+    final selectedPhoto = (selectedData['photo_url'] as String?) ?? '';
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF0A1730),
+                  _bg,
+                  const Color(0xFF050A17),
+                ],
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: -120,
+          left: -100,
+          child: Container(
+            width: 380,
+            height: 380,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color.fromRGBO(116, 177, 255, 0.10),
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Column(
+            children: [
+              const _HomeTopBar(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good morning, $_username',
+                        style: const TextStyle(
+                          color: _textMuted,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Everything\'s ready for\nyour companion today.',
+                        style: TextStyle(
+                          color: _textMain,
+                          fontSize: 48,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.7,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _DogHeroCard(
+                        petName: selectedName,
+                        breed: selectedBreed,
+                        photoUrl: selectedPhoto,
+                        petCount: pets.length,
+                      ),
+                      const SizedBox(height: 30),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Today\'s Schedule',
+                            style: TextStyle(
+                              color: _textMain,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            'See all',
+                            style: TextStyle(
+                              color: Color(0xFFA3AAC4),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 54),
+                            child: Column(
+                              children: [
+                                _ScheduleItem(
+                                  icon: Icons.directions_walk,
+                                  iconBg: Color(0xFF1F3258),
+                                  iconColor: Color(0xFF74B1FF),
+                                  title: 'Walk at 2 PM',
+                                  subtitle: 'Assigned to: Marcus',
+                                ),
+                                SizedBox(height: 14),
+                                _ScheduleItem(
+                                  icon: Icons.restaurant,
+                                  iconBg: Color(0xFF3B2F23),
+                                  iconColor: Color(0xFFF0C686),
+                                  title: 'Feeding at 5 PM',
+                                  subtitle: 'Evening Meal • Kibble + Topper',
+                                ),
+                                SizedBox(height: 14),
+                                _ScheduleItem(
+                                  icon: Icons.medication,
+                                  iconBg: Color(0xFF263D35),
+                                  iconColor: Color(0xFF95DEBA),
+                                  title: 'Medication at 8 PM',
+                                  subtitle: 'Monthly flea prevention',
+                                  highlighted: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          right: 22,
+          bottom: 108,
+          child: _FloatingAddButton(
+            onPressed: () => _openQuickActions(
+              familyId: familyId,
+              pets: pets,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -111,139 +513,73 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF0A1730),
-                    _bg,
-                    const Color(0xFF050A17),
-                  ],
-                  stops: const [0.0, 0.55, 1.0],
-                ),
+      body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+        stream: _familyService.streamFamiliesForCurrentUser(),
+        builder: (context, familySnapshot) {
+          final families = familySnapshot.data ?? const [];
+
+          if (familySnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (families.isEmpty) {
+            return Center(
+              child: Text(
+                'Create a family to start managing pets',
+                style: TextStyle(color: _textMuted.withValues(alpha: 0.9)),
               ),
-            ),
-          ),
-          Positioned(
-            top: -120,
-            left: -100,
-            child: Container(
-              width: 380,
-              height: 380,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color.fromRGBO(116, 177, 255, 0.10),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                const _HomeTopBar(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Good morning, $_username',
-                          style: const TextStyle(
-                            color: _textMuted,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Everything\'s ready for\nFido today.',
-                          style: TextStyle(
-                            color: _textMain,
-                            fontSize: 48,
-                            height: 1.05,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.7,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        const _DogHeroCard(),
-                        const SizedBox(height: 30),
-                        const Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Today\'s Schedule',
-                              style: TextStyle(
-                                color: _textMain,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Text(
-                              'See all',
-                              style: TextStyle(
-                                color: Color(0xFFA3AAC4),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: const [
-                            Padding(
-                              padding: EdgeInsets.only(bottom: 54),
-                              child: Column(
-                                children: [
-                                  _ScheduleItem(
-                                    icon: Icons.directions_walk,
-                                    iconBg: Color(0xFF1F3258),
-                                    iconColor: Color(0xFF74B1FF),
-                                    title: 'Walk at 2 PM',
-                                    subtitle: 'Assigned to: Marcus',
-                                  ),
-                                  SizedBox(height: 14),
-                                  _ScheduleItem(
-                                    icon: Icons.restaurant,
-                                    iconBg: Color(0xFF3B2F23),
-                                    iconColor: Color(0xFFF0C686),
-                                    title: 'Feeding at 5 PM',
-                                    subtitle: 'Evening Meal • Kibble + Topper',
-                                  ),
-                                  SizedBox(height: 14),
-                                  _ScheduleItem(
-                                    icon: Icons.medication,
-                                    iconBg: Color(0xFF263D35),
-                                    iconColor: Color(0xFF95DEBA),
-                                    title: 'Medication at 8 PM',
-                                    subtitle: 'Monthly flea prevention',
-                                    highlighted: true,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              right: 2,
-                              bottom: 0,
-                              child: _FloatingAddButton(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+            );
+          }
+
+          final familyId = _selectedFamilyId != null &&
+                  families.any((family) => family.id == _selectedFamilyId)
+              ? _selectedFamilyId!
+              : families.first.id;
+
+          if (_profileLoaded && _selectedFamilyId != familyId) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {
+                _selectedFamilyId = familyId;
+              });
+            });
+          }
+
+          return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            stream: _petService.streamPets(familyId),
+            builder: (context, petSnapshot) {
+              final pets = petSnapshot.data ?? const [];
+
+              if (petSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (_profileLoaded && pets.isNotEmpty) {
+                final validPet = _selectedPetId != null &&
+                    pets.any((pet) => pet.id == _selectedPetId);
+                if (!validPet) {
+                  final nextPetId = pets.first.id;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    setState(() {
+                      _selectedFamilyId = familyId;
+                      _selectedPetId = nextPetId;
+                    });
+                    _persistActivePetSelection(
+                      familyId: familyId,
+                      petId: nextPetId,
+                    );
+                  });
+                }
+              }
+
+              return _buildHomeBody(
+                familyId: familyId,
+                pets: pets,
+              );
+            },
+          );
+        },
       ),
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
@@ -252,6 +588,72 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentIndex = index;
           });
         },
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _HomeScreenState._surfaceHigh,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _HomeScreenState._bg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: _HomeScreenState._primary, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _HomeScreenState._textMain,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: _HomeScreenState._textMuted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -308,7 +710,17 @@ class _HomeTopBar extends StatelessWidget {
 }
 
 class _DogHeroCard extends StatelessWidget {
-  const _DogHeroCard();
+  final String petName;
+  final String breed;
+  final String photoUrl;
+  final int petCount;
+
+  const _DogHeroCard({
+    required this.petName,
+    required this.breed,
+    required this.photoUrl,
+    required this.petCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -342,14 +754,23 @@ class _DogHeroCard extends StatelessWidget {
                     ),
                   ),
                   Center(
-                    child: Opacity(
-                      opacity: 0.88,
-                      child: Image.asset(
-                        'assets/icon/StitchSyncIcon.png',
-                        width: 140,
-                        height: 140,
-                      ),
-                    ),
+                    child: photoUrl.isNotEmpty
+                        ? ClipOval(
+                            child: Image.network(
+                              photoUrl,
+                              width: 140,
+                              height: 140,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Opacity(
+                            opacity: 0.88,
+                            child: Image.asset(
+                              'assets/icon/StitchSyncIcon.png',
+                              width: 140,
+                              height: 140,
+                            ),
+                          ),
                   ),
                   Positioned(
                     left: 16,
@@ -371,16 +792,29 @@ class _DogHeroCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Positioned(
+                  Positioned(
                     left: 16,
                     bottom: 20,
-                    child: Text(
-                      'Current Dog: Stitch',
-                      style: TextStyle(
-                        color: Color(0xFFDEE5FF),
-                        fontSize: 23,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current Pet: $petName',
+                          style: const TextStyle(
+                            color: Color(0xFFDEE5FF),
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          breed,
+                          style: const TextStyle(
+                            color: Color(0xFFA3AAC4),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -390,17 +824,9 @@ class _DogHeroCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _AvatarCircle(
-                color: const Color(0xFF213458),
-                icon: Icons.person,
-                iconColor: const Color(0xFF74B1FF),
-              ),
+              _PetAvatarBubble(name: petName, photoUrl: photoUrl),
               const SizedBox(width: 6),
-              _AvatarCircle(
-                color: const Color(0xFF2B3343),
-                icon: Icons.person,
-                iconColor: const Color(0xFFA3AAC4),
-              ),
+              _PetAvatarBubble(name: 'A', photoUrl: ''),
               const SizedBox(width: 6),
               Container(
                 width: 40,
@@ -409,10 +835,10 @@ class _DogHeroCard extends StatelessWidget {
                   color: Color(0xFF273247),
                   shape: BoxShape.circle,
                 ),
-                child: const Center(
+                child: Center(
                   child: Text(
-                    '+2',
-                    style: TextStyle(
+                    '+${petCount > 1 ? petCount - 1 : 0}',
+                    style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       color: Color(0xFFDEE5FF),
                     ),
@@ -438,15 +864,13 @@ class _DogHeroCard extends StatelessWidget {
   }
 }
 
-class _AvatarCircle extends StatelessWidget {
-  final Color color;
-  final IconData icon;
-  final Color iconColor;
+class _PetAvatarBubble extends StatelessWidget {
+  final String name;
+  final String photoUrl;
 
-  const _AvatarCircle({
-    required this.color,
-    required this.icon,
-    required this.iconColor,
+  const _PetAvatarBubble({
+    required this.name,
+    required this.photoUrl,
   });
 
   @override
@@ -454,8 +878,23 @@ class _AvatarCircle extends StatelessWidget {
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, color: iconColor, size: 22),
+      decoration: const BoxDecoration(
+        color: Color(0xFF213458),
+        shape: BoxShape.circle,
+      ),
+      child: photoUrl.isNotEmpty
+          ? ClipOval(
+              child: Image.network(photoUrl, fit: BoxFit.cover),
+            )
+          : Center(
+              child: Text(
+                name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                style: const TextStyle(
+                  color: Color(0xFF74B1FF),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
     );
   }
 }
@@ -529,29 +968,34 @@ class _ScheduleItem extends StatelessWidget {
 }
 
 class _FloatingAddButton extends StatelessWidget {
-  const _FloatingAddButton();
+  final VoidCallback onPressed;
+
+  const _FloatingAddButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 88,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF74B1FF), Color(0xFF5FA3F6)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Color.fromRGBO(95, 163, 246, 0.35),
-            blurRadius: 24,
-            offset: Offset(0, 10),
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF74B1FF), Color(0xFF5FA3F6)],
           ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: Color.fromRGBO(95, 163, 246, 0.35),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Color(0xFF0A1C38), size: 34),
       ),
-      child: const Icon(Icons.add, color: Color(0xFF0A1C38), size: 44),
     );
   }
 }
@@ -658,3 +1102,4 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
+
