@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import 'account_settings_screen.dart';
 import 'home_screen.dart';
 import 'manage_family_screen.dart';
+import 'notifications_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onGoHome;
@@ -485,8 +486,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.notifications,
-          title: 'Feeding Reminders',
-          subtitle: 'Manage schedules and notifications',
+          title: 'Notifications',
+          subtitle: 'Manage push and email alerts',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const NotificationsScreen(),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 12),
         _buildPreferenceItem(
