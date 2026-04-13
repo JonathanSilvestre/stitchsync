@@ -1,0 +1,599 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'create_family_screen.dart';
+import '../services/family_service.dart';
+
+class FamilyTabContent extends StatefulWidget {
+  const FamilyTabContent({super.key});
+
+  @override
+  State<FamilyTabContent> createState() => _FamilyTabContentState();
+}
+
+class _FamilyTabContentState extends State<FamilyTabContent> {
+  final FamilyService _familyService = FamilyService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  static const Color _bg = Color(0xFF060E20);
+  static const Color _surface = Color(0xFF0F1930);
+  static const Color _surfaceHigh = Color(0xFF192540);
+  static const Color _textMain = Color(0xFFDEE5FF);
+  static const Color _textMuted = Color(0xFFA3AAC4);
+  static const Color _primary = Color(0xFF74B1FF);
+
+  Future<void> _openCreateFamilyScreen() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CreateFamilyScreen(),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _showInviteDialog({
+    required String familyId,
+    required String familyName,
+  }) async {
+    String emailValue = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: _surfaceHigh,
+          title: const Text(
+            'Invitar miembro',
+            style: TextStyle(color: _textMain),
+          ),
+          content: TextFormField(
+            onChanged: (value) => emailValue = value,
+            keyboardType: TextInputType.emailAddress,
+            style: const TextStyle(color: _textMain),
+            decoration: const InputDecoration(
+              labelText: 'Correo electrónico',
+              labelStyle: TextStyle(color: _textMuted),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final email = emailValue.trim();
+                if (email.isEmpty || !email.contains('@')) {
+                  return;
+                }
+
+                try {
+                  await _familyService.inviteByEmail(
+                    familyId: familyId,
+                    familyName: familyName,
+                    email: email,
+                  );
+
+                  if (!dialogContext.mounted) {
+                    return;
+                  }
+
+                  Navigator.of(dialogContext).pop();
+
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invitación enviada')),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(_familyService.getReadableError(e))),
+                  );
+                }
+              },
+              child: const Text('Invitar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<List<_MemberData>> _loadMembers(List<dynamic> memberUids, String ownerUid) async {
+    final docs = await Future.wait(
+      memberUids.map(
+        (uid) => _firestore.collection('users').doc(uid as String).get(),
+      ),
+    );
+
+    return docs.map((doc) {
+      final data = doc.data() ?? <String, dynamic>{};
+      final username = (data['username'] as String?)?.trim();
+      return _MemberData(
+        uid: doc.id,
+        name: (username != null && username.isNotEmpty) ? username : 'Member',
+        subtitle: doc.id == ownerUid ? 'Primary Caretaker' : 'Family Member',
+        isAdmin: doc.id == ownerUid,
+      );
+    }).toList();
+  }
+
+  String _buildInviteCode(String familyName, String familyId) {
+    final prefix = familyName.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    final shortPrefix = prefix.isEmpty ? 'STITCH' : prefix;
+    final left = shortPrefix.substring(0, shortPrefix.length.clamp(0, 6));
+    final right = familyId.substring(0, 3).toUpperCase();
+    return '$left-$right';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: _familyService.streamFamiliesForCurrentUser(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            color: _bg,
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  'Error cargando familias:\n${snapshot.error}',
+                  style: const TextStyle(color: _textMuted),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final families = snapshot.data ?? [];
+        final hasFamily = families.isNotEmpty;
+        final family = hasFamily ? families.first : null;
+        final data = family?.data() ?? <String, dynamic>{};
+        final familyName = hasFamily ? (data['name'] as String?) ?? 'My Family' : 'My Family';
+        final ownerUid = (data['owner_uid'] as String?) ?? '';
+        final memberUids = (data['member_uids'] as List<dynamic>? ?? const []);
+        final inviteCode = hasFamily ? _buildInviteCode(familyName, family!.id) : '-- -- --';
+
+        return Container(
+          color: _bg,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF0A1730),
+                        _bg,
+                        const Color(0xFF050A17),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(22, 14, 22, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        decoration: BoxDecoration(
+                          color: _surfaceHigh.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: Image.asset(
+                                'assets/icon/StitchSyncIcon.png',
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'StitchSync',
+                                style: TextStyle(
+                                  color: _primary,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.notifications_none,
+                              color: _textMuted,
+                              size: 24,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'My Family',
+                        style: TextStyle(
+                          color: _textMain,
+                          fontSize: 40,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.6,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        hasFamily
+                            ? 'Manage everyone who helps take care of Fido.'
+                            : 'No hay familia disponible. Crea una para comenzar.',
+                        style: const TextStyle(
+                          color: _textMuted,
+                          fontSize: 16,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF1E67B1), Color(0xFF2D7BC9)],
+                          ),
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color.fromRGBO(11, 53, 100, 0.35),
+                              blurRadius: 24,
+                              offset: Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'SHARE INVITE CODE',
+                              style: TextStyle(
+                                color: Color(0xFFD8EAFF),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.8,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF3A80C7),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      inviteCode,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 2.2,
+                                      ),
+                                    ),
+                                  ),
+                                  FilledButton(
+                                    onPressed: hasFamily
+                                        ? () async {
+                                            final messenger = ScaffoldMessenger.of(context);
+                                            await Clipboard.setData(
+                                              ClipboardData(text: inviteCode),
+                                            );
+                                            if (!mounted) {
+                                              return;
+                                            }
+                                            messenger.showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Código copiado'),
+                                              ),
+                                            );
+                                          }
+                                        : () async {
+                                            await _openCreateFamilyScreen();
+                                          },
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF0C53A1),
+                                    ),
+                                    child: Text(hasFamily ? 'Copy' : 'Crear'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              hasFamily
+                                  ? 'Send this code to family members to sync your pet\'s schedule.'
+                                  : 'Crea una familia para habilitar invitaciones y sincronización.',
+                              style: const TextStyle(
+                                color: Color(0xFFE3F0FF),
+                                fontSize: 14,
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hasFamily) ...[
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Active Members',
+                                style: TextStyle(
+                                  color: _textMain,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                _showInviteDialog(
+                                  familyId: family!.id,
+                                  familyName: familyName,
+                                );
+                              },
+                              child: const Text(
+                                '+ Invite Member',
+                                style: TextStyle(
+                                  color: _primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        FutureBuilder<List<_MemberData>>(
+                          future: _loadMembers(memberUids, ownerUid),
+                          builder: (context, membersSnapshot) {
+                            if (membersSnapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+
+                            final members = membersSnapshot.data ?? [];
+
+                            return Column(
+                              children: [
+                                ...members.map(
+                                  (member) => Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                                    decoration: BoxDecoration(
+                                      color: _surface,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 26,
+                                          backgroundColor: const Color(0xFF273247),
+                                          child: Text(
+                                            member.name.characters.first.toUpperCase(),
+                                            style: const TextStyle(
+                                              color: _textMain,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                member.name +
+                                                    (member.uid == FirebaseAuth.instance.currentUser?.uid
+                                                        ? ' (You)'
+                                                        : ''),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: _textMain,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                member.subtitle,
+                                                style: const TextStyle(
+                                                  color: _textMuted,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (member.isAdmin)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF2A3752),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: const Text(
+                                              'ADMIN',
+                                              style: TextStyle(
+                                                color: Color(0xFFAFBAD0),
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          const Icon(
+                                            Icons.more_vert,
+                                            color: Color(0xFF7D889E),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    _showInviteDialog(
+                                      familyId: family!.id,
+                                      familyName: familyName,
+                                    );
+                                  },
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+                                    decoration: BoxDecoration(
+                                      color: _surface,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: const Color(0xFFB9C3DA).withValues(alpha: 0.15),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 20,
+                                          backgroundColor: Color(0xFF273247),
+                                          child: Icon(
+                                            Icons.person_add_alt_1,
+                                            color: Color(0xFFA3AAC4),
+                                          ),
+                                        ),
+                                        SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Invite More',
+                                                style: TextStyle(
+                                                  color: _textMain,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              SizedBox(height: 2),
+                                              Text(
+                                                'Add up to 5 family members',
+                                                style: TextStyle(
+                                                  color: _textMuted,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1F3A35),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
+                                SizedBox(width: 8),
+                                Text(
+                                  'PET HEALTH PULSE',
+                                  style: TextStyle(
+                                    color: Color(0xFF9FD6BD),
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              'Everyone is synchronized. Fido was last fed by Sarah at 8:00 AM.',
+                              style: TextStyle(
+                                color: Color(0xFFC9E9D9),
+                                fontSize: 16,
+                                height: 1.45,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MemberData {
+  final String uid;
+  final String name;
+  final String subtitle;
+  final bool isAdmin;
+
+  const _MemberData({
+    required this.uid,
+    required this.name,
+    required this.subtitle,
+    required this.isAdmin,
+  });
+}

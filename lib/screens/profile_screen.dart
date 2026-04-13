@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'home_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final VoidCallback? onGoHome;
+
+  const ProfileScreen({super.key, this.onGoHome});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -87,6 +90,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _goHome() {
+    if (widget.onGoHome != null) {
+      widget.onGoHome!();
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const HomeScreen(initialTab: 0),
+      ),
+      (route) => false,
     );
   }
 
@@ -187,10 +204,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: _surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.settings,
-            color: _primary,
-            size: 24,
+          child: IconButton(
+            onPressed: _goHome,
+            icon: const Icon(
+              Icons.home_rounded,
+              color: _primary,
+              size: 24,
+            ),
           ),
         ),
       ],

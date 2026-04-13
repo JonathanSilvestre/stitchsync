@@ -1,0 +1,697 @@
+import 'package:flutter/material.dart';
+
+import '../services/pet_service.dart';
+import 'home_screen.dart';
+
+class AddNewPetScreen extends StatefulWidget {
+  final String familyId;
+
+  const AddNewPetScreen({super.key, required this.familyId});
+
+  @override
+  State<AddNewPetScreen> createState() => _AddNewPetScreenState();
+}
+
+class _AddNewPetScreenState extends State<AddNewPetScreen> {
+  final PetService _petService = PetService();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _breedController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
+
+  static const Color _bg = Color(0xFF060E20);
+  static const Color _surfaceHigh = Color(0xFF192540);
+  static const Color _textMain = Color(0xFFDEE5FF);
+  static const Color _textMuted = Color(0xFFA3AAC4);
+  static const Color _primary = Color(0xFF74B1FF);
+
+  bool _isMale = true;
+  bool _isKg = true;
+  bool _isSaving = false;
+  DateTime? _birthDate;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _breedController.dispose();
+    _weightController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime(now.year - 1),
+      firstDate: DateTime(now.year - 30),
+      lastDate: now,
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        _birthDate = picked;
+      });
+    }
+  }
+
+  int _resolveAgeFromBirthDate() {
+    if (_birthDate == null) {
+      return 0;
+    }
+
+    final now = DateTime.now();
+    int age = now.year - _birthDate!.year;
+    final notHadBirthdayYet = now.month < _birthDate!.month ||
+        (now.month == _birthDate!.month && now.day < _birthDate!.day);
+    if (notHadBirthdayYet) {
+      age -= 1;
+    }
+    if (age < 0) {
+      return 0;
+    }
+    return age;
+  }
+
+  String _composeNotes() {
+    final pieces = <String>[];
+    final weight = _weightController.text.trim();
+    if (weight.isNotEmpty) {
+      pieces.add('Weight: $weight ${_isKg ? 'kg' : 'lb'}');
+    }
+
+    pieces.add('Gender: ${_isMale ? 'Male' : 'Female'}');
+
+    if (_birthDate != null) {
+      final mm = _birthDate!.month.toString().padLeft(2, '0');
+      final dd = _birthDate!.day.toString().padLeft(2, '0');
+      final yy = _birthDate!.year.toString();
+      pieces.add('DOB: $mm/$dd/$yy');
+    }
+
+    final bio = _notesController.text.trim();
+    if (bio.isNotEmpty) {
+      pieces.add('Notes: $bio');
+    }
+
+    return pieces.join(' | ');
+  }
+
+  Future<void> _savePet() async {
+    final name = _nameController.text.trim();
+    final breed = _breedController.text.trim();
+
+    if (name.isEmpty || breed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Completa nombre y raza de la mascota')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      await _petService.addPet(
+        familyId: widget.familyId,
+        name: name,
+        breed: breed,
+        age: _resolveAgeFromBirthDate(),
+        notes: _composeNotes(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mascota agregada correctamente')),
+      );
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const HomeScreen(initialTab: 2),
+        ),
+        (route) => false,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  void _navigateMainTab(int index) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => HomeScreen(initialTab: index)),
+      (route) => false,
+    );
+  }
+
+  String _birthDateLabel() {
+    if (_birthDate == null) {
+      return 'mm/dd/yyyy';
+    }
+
+    final mm = _birthDate!.month.toString().padLeft(2, '0');
+    final dd = _birthDate!.day.toString().padLeft(2, '0');
+    final yy = _birthDate!.year.toString();
+    return '$mm/$dd/$yy';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF0A1730),
+                    _bg,
+                    const Color(0xFF08142B),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  height: 72,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  color: const Color(0xFF0A1730),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back, color: _textMuted),
+                      ),
+                      const SizedBox(width: 4),
+                      const Expanded(
+                        child: Text(
+                          'AddNewPet',
+                          style: TextStyle(
+                            color: Color(0xFF9DC7FF),
+                            fontSize: 34,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.4,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _surfaceHigh,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.person, color: _primary, size: 22),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                    child: Column(
+                      children: [
+                        Center(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 180,
+                                height: 180,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(30),
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [Color(0xFF2D3A52), Color(0xFF192540)],
+                                  ),
+                                ),
+                                child: const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_a_photo_outlined,
+                                      color: Color(0xFFAFBED9),
+                                      size: 44,
+                                    ),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'UPLOAD PHOTO',
+                                      style: TextStyle(
+                                        color: Color(0xFFAFBED9),
+                                        fontSize: 18,
+                                        letterSpacing: 1.2,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Positioned(
+                                right: -8,
+                                bottom: -8,
+                                child: Container(
+                                  width: 62,
+                                  height: 62,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF2D66D8),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: const Icon(Icons.edit, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        _FieldCard(
+                          label: 'PET NAME',
+                          child: TextField(
+                            controller: _nameController,
+                            style: const TextStyle(color: _textMain, fontSize: 18),
+                            decoration: const InputDecoration(
+                              hintText: 'e.g. Luna',
+                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _FieldCard(
+                          label: 'BREED',
+                          child: TextField(
+                            controller: _breedController,
+                            style: const TextStyle(color: _textMain, fontSize: 18),
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.search, color: _primary),
+                              hintText: 'Search breed...',
+                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _FieldCard(
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00091D),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _isMale = true),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: _isMale ? const Color(0xFF2D66D8) : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        'Male',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: _isMale ? Colors.white : _textMuted,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _isMale = false),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: !_isMale ? const Color(0xFF2D66D8) : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        'Female',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: !_isMale ? Colors.white : _textMuted,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _FieldCard(
+                          label: 'DATE OF BIRTH',
+                          child: InkWell(
+                            onTap: _pickBirthDate,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.calendar_month_outlined, color: _primary),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    _birthDateLabel(),
+                                    style: const TextStyle(color: _textMain, fontSize: 17),
+                                  ),
+                                  const Spacer(),
+                                  const Icon(Icons.calendar_today_outlined,
+                                      color: Color(0xFFD7DFF3), size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _FieldCard(
+                          label: 'WEIGHT',
+                          trailing: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00091D),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _UnitChip(
+                                  label: 'KG',
+                                  selected: _isKg,
+                                  onTap: () => setState(() => _isKg = true),
+                                ),
+                                _UnitChip(
+                                  label: 'LB',
+                                  selected: !_isKg,
+                                  onTap: () => setState(() => _isKg = false),
+                                ),
+                              ],
+                            ),
+                          ),
+                          child: TextField(
+                            controller: _weightController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: const TextStyle(color: _textMain, fontSize: 18),
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.monitor_weight_outlined, color: _primary),
+                              hintText: '0.0',
+                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _FieldCard(
+                          label: 'BIO & MEDICAL NOTES',
+                          child: TextField(
+                            controller: _notesController,
+                            minLines: 4,
+                            maxLines: 5,
+                            style: const TextStyle(color: _textMain, fontSize: 17),
+                            decoration: const InputDecoration(
+                              hintText: 'Tell us about your pet\'s favorites, allergies, or habits...',
+                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 17),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF74B1FF), Color(0xFF5FA3F6)],
+                            ),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color.fromRGBO(95, 163, 246, 0.30),
+                                blurRadius: 24,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: _isSaving ? null : _savePet,
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(66),
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                            icon: _isSaving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const Icon(Icons.pets),
+                            label: Text(
+                              _isSaving ? 'Saving...' : 'Add Pet',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'By adding a pet, you can start sharing care schedules with your family members.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: _textMuted, fontSize: 14, height: 1.45),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                    ),
+                  ),
+                ),
+                _BottomTabs(onTap: _navigateMainTab, selectedIndex: 3),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FieldCard extends StatelessWidget {
+  final String? label;
+  final Widget child;
+  final Widget? trailing;
+
+  const _FieldCard({
+    this.label,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A34),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (label != null || trailing != null)
+            Row(
+              children: [
+                if (label != null)
+                  Text(
+                    label!,
+                    style: const TextStyle(
+                      color: Color(0xFF8091B1),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                const Spacer(),
+                ?trailing,
+              ],
+            ),
+          if (label != null || trailing != null) const SizedBox(height: 8),
+          Theme(
+            data: Theme.of(context).copyWith(
+              inputDecorationTheme: const InputDecorationTheme(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnitChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _UnitChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF2D66D8) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : const Color(0xFF8091B1),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomTabs extends StatelessWidget {
+  final ValueChanged<int> onTap;
+  final int selectedIndex;
+
+  const _BottomTabs({
+    required this.onTap,
+    required this.selectedIndex,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1930),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          _NavTab(
+            icon: Icons.home_filled,
+            label: 'Home',
+            selected: selectedIndex == 0,
+            onTap: () => onTap(0),
+          ),
+          _NavTab(
+            icon: Icons.calendar_today,
+            label: 'Calendar',
+            selected: selectedIndex == 1,
+            onTap: () => onTap(1),
+          ),
+          _NavTab(
+            icon: Icons.groups,
+            label: 'Family',
+            selected: selectedIndex == 2,
+            onTap: () => onTap(2),
+          ),
+          _NavTab(
+            icon: Icons.person,
+            label: 'Profile',
+            selected: selectedIndex == 3,
+            onTap: () => onTap(3),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavTab extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavTab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? const Color(0xFFA3C8FF) : const Color(0xFFA3AAC4);
+    final bg = selected ? const Color(0xFF192F5F) : Colors.transparent;
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: fg, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

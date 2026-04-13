@@ -1,10 +1,15 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import 'calendar_screen.dart';
+import 'family_screen.dart';
+import 'new_event_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTab;
+
+  const HomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -24,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialTab.clamp(0, 3);
     _loadUsername();
   }
 
@@ -55,7 +61,52 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_currentIndex == 3) {
-      return const ProfileScreen();
+      return ProfileScreen(
+        onGoHome: () {
+          setState(() {
+            _currentIndex = 0;
+          });
+        },
+      );
+    }
+
+    if (_currentIndex == 1) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: CalendarTabContent(
+          onNewEvent: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NewEventScreen(),
+              ),
+            );
+          },
+        ),
+        bottomNavigationBar: _BottomNavBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+        ),
+      );
+    }
+
+    if (_currentIndex == 2) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: const FamilyTabContent(),
+        bottomNavigationBar: _BottomNavBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+        ),
+      );
     }
 
     return Scaffold(
