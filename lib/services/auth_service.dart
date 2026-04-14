@@ -75,6 +75,7 @@ class AuthService {
 
       await result.user?.sendEmailVerification();
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
+      await _auth.signOut();
       return result.user;
     } on FirebaseAuthException {
       rethrow;
@@ -100,8 +101,27 @@ class AuthService {
         password: password,
       );
 
+      final user = result.user;
+      if (user == null) {
+        return null;
+      }
+
+      await user.reload();
+      final refreshedUser = _auth.currentUser;
+      if (refreshedUser == null) {
+        return null;
+      }
+
+      if (!refreshedUser.emailVerified) {
+        await _auth.signOut();
+        throw FirebaseAuthException(
+          code: 'email-not-verified',
+          message: 'Verifica tu correo antes de iniciar sesión.',
+        );
+      }
+
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
-      return result.user;
+      return refreshedUser;
     } on FirebaseAuthException {
       rethrow;
     } catch (_) {
@@ -336,6 +356,8 @@ class AuthService {
         return 'Vuelve a iniciar sesión y repite la operación.';
       case 'username-already-in-use':
         return 'Ese nombre de usuario ya está en uso.';
+      case 'email-not-verified':
+        return 'Debes verificar tu correo antes de iniciar sesión.';
       default:
         return error.message ?? 'Ocurrió un error de autenticación.';
     }

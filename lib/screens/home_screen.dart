@@ -2,11 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../services/event_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'new_event_screen.dart';
+import 'pet_details_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final AuthService _auth = AuthService();
   final FamilyService _familyService = FamilyService();
   final PetService _petService = PetService();
+  final EventService _eventService = EventService();
 
   String _username = 'Sarah';
   int _currentIndex = 0;
@@ -145,7 +148,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (action == 'add_event') {
       await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const NewEventScreen()),
+        MaterialPageRoute(
+          builder: (_) => NewEventScreen(
+            familyId: familyId,
+            petId: _selectedPetId,
+          ),
+        ),
       );
       return;
     }
@@ -295,9 +303,59 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _formatTimeLabel(DateTime dateTime) {
+    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final period = dateTime.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  IconData _eventIcon(String category, String title) {
+    final lookup = '${category.toLowerCase()} ${title.toLowerCase()}';
+    if (lookup.contains('walk') || lookup.contains('exercise')) {
+      return Icons.directions_walk;
+    }
+    if (lookup.contains('feed') || lookup.contains('food') || lookup.contains('meal')) {
+      return Icons.restaurant;
+    }
+    if (lookup.contains('med') || lookup.contains('vet')) {
+      return Icons.medication;
+    }
+    return Icons.event;
+  }
+
+  ({Color bg, Color fg}) _eventPalette(IconData icon) {
+    if (icon == Icons.directions_walk) {
+      return (bg: const Color(0xFF1F3258), fg: const Color(0xFF74B1FF));
+    }
+    if (icon == Icons.restaurant) {
+      return (bg: const Color(0xFF3B2F23), fg: const Color(0xFFF0C686));
+    }
+    if (icon == Icons.medication) {
+      return (bg: const Color(0xFF263D35), fg: const Color(0xFF95DEBA));
+    }
+    return (bg: const Color(0xFF2A3045), fg: const Color(0xFF9FB0D1));
+  }
+
+  void _openPetDetails({
+    required Map<String, dynamic> petData,
+    required int familyMemberCount,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PetDetailsScreen(
+          petData: petData,
+          familyMemberCount: familyMemberCount,
+        ),
+      ),
+    );
+  }
+
   Widget _buildHomeBody({
     required String familyId,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
+    required int familyMemberCount,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> todayEvents,
   }) {
     QueryDocumentSnapshot<Map<String, dynamic>>? selectedPet;
     if (pets.isNotEmpty) {
@@ -378,13 +436,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         petName: selectedName,
                         breed: selectedBreed,
                         photoUrl: selectedPhoto,
-                        petCount: pets.length,
+                        familyMemberCount: familyMemberCount,
+                        onViewDetails: () => _openPetDetails(
+                          petData: selectedData,
+                          familyMemberCount: familyMemberCount,
+                        ),
                       ),
                       const SizedBox(height: 30),
-                      const Row(
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
+                          const Text(
                             'Today\'s Schedule',
                             style: TextStyle(
                               color: _textMain,
@@ -392,53 +454,79 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          Text(
-                            'See all',
-                            style: TextStyle(
-                              color: Color(0xFFA3AAC4),
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _currentIndex = 1;
+                              });
+                            },
+                            child: const Text(
+                              'See all',
+                              style: TextStyle(
+                                color: Color(0xFFA3AAC4),
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 54),
-                            child: Column(
-                              children: [
-                                _ScheduleItem(
-                                  icon: Icons.directions_walk,
-                                  iconBg: Color(0xFF1F3258),
-                                  iconColor: Color(0xFF74B1FF),
-                                  title: 'Walk at 2 PM',
-                                  subtitle: 'Assigned to: Marcus',
-                                ),
-                                SizedBox(height: 14),
-                                _ScheduleItem(
-                                  icon: Icons.restaurant,
-                                  iconBg: Color(0xFF3B2F23),
-                                  iconColor: Color(0xFFF0C686),
-                                  title: 'Feeding at 5 PM',
-                                  subtitle: 'Evening Meal • Kibble + Topper',
-                                ),
-                                SizedBox(height: 14),
-                                _ScheduleItem(
-                                  icon: Icons.medication,
-                                  iconBg: Color(0xFF263D35),
-                                  iconColor: Color(0xFF95DEBA),
-                                  title: 'Medication at 8 PM',
-                                  subtitle: 'Monthly flea prevention',
-                                  highlighted: true,
-                                ),
-                              ],
-                            ),
+                      if (todayEvents.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: _surfaceHigh,
+                            borderRadius: BorderRadius.circular(22),
                           ),
-                        ],
-                      ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.event_available, color: _primary, size: 30),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'No events for today yet.',
+                                  style: TextStyle(
+                                    color: _textMain,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Column(
+                          children: todayEvents.take(5).map((eventDoc) {
+                            final data = eventDoc.data();
+                            final title = (data['title'] as String?)?.trim().isNotEmpty == true
+                                ? (data['title'] as String).trim()
+                                : 'Untitled event';
+                            final note = (data['note'] as String?)?.trim() ?? '';
+                            final category = (data['category'] as String?)?.trim() ?? '';
+                            final scheduledAt = data['scheduled_at'];
+                            final timestamp =
+                                scheduledAt is Timestamp ? scheduledAt.toDate() : DateTime.now();
+                            final icon = _eventIcon(category, title);
+                            final palette = _eventPalette(icon);
+
+                            final subtitle = note.isNotEmpty
+                                ? '${_formatTimeLabel(timestamp)} • $note'
+                                : 'Today at ${_formatTimeLabel(timestamp)}';
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: _ScheduleItem(
+                                icon: icon,
+                                iconBg: palette.bg,
+                                iconColor: palette.fg,
+                                title: title,
+                                subtitle: subtitle,
+                              ),
+                            );
+                          }).toList(growable: false),
+                        ),
                     ],
                   ),
                 ),
@@ -448,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Positioned(
           right: 22,
-          bottom: 108,
+          bottom: 26,
           child: _FloatingAddButton(
             onPressed: () => _openQuickActions(
               familyId: familyId,
@@ -480,7 +568,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const NewEventScreen(),
+                builder: (_) => NewEventScreen(
+                  familyId: _selectedFamilyId,
+                  petId: _selectedPetId,
+                ),
               ),
             );
           },
@@ -536,6 +627,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ? _selectedFamilyId!
               : families.first.id;
 
+            final selectedFamily = families.firstWhere((family) => family.id == familyId);
+            final selectedFamilyData = selectedFamily.data();
+            final memberUids = (selectedFamilyData['member_uids'] as List<dynamic>?) ?? const [];
+            final familyMemberCount = memberUids.length;
+
           if (_profileLoaded && _selectedFamilyId != familyId) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
@@ -573,9 +669,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               }
 
-              return _buildHomeBody(
-                familyId: familyId,
-                pets: pets,
+              return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                stream: _eventService.streamTodayEvents(
+                  familyId: familyId,
+                  petId: _selectedPetId,
+                ),
+                builder: (context, eventSnapshot) {
+                  final todayEvents = eventSnapshot.data ?? const [];
+
+                  return _buildHomeBody(
+                    familyId: familyId,
+                    pets: pets,
+                    familyMemberCount: familyMemberCount,
+                    todayEvents: todayEvents,
+                  );
+                },
               );
             },
           );
@@ -713,13 +821,15 @@ class _DogHeroCard extends StatelessWidget {
   final String petName;
   final String breed;
   final String photoUrl;
-  final int petCount;
+  final int familyMemberCount;
+  final VoidCallback onViewDetails;
 
   const _DogHeroCard({
     required this.petName,
     required this.breed,
     required this.photoUrl,
-    required this.petCount,
+    required this.familyMemberCount,
+    required this.onViewDetails,
   });
 
   @override
@@ -824,34 +934,55 @@ class _DogHeroCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _PetAvatarBubble(name: petName, photoUrl: photoUrl),
-              const SizedBox(width: 6),
-              _PetAvatarBubble(name: 'A', photoUrl: ''),
-              const SizedBox(width: 6),
-              Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF273247),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '+${petCount > 1 ? petCount - 1 : 0}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFFDEE5FF),
+              ...List.generate(
+                familyMemberCount > 3 ? 3 : familyMemberCount,
+                (index) => Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 6),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF213458),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person,
+                      color: Color(0xFF74B1FF),
+                      size: 20,
                     ),
                   ),
                 ),
               ),
+              if (familyMemberCount > 3) ...[
+                const SizedBox(width: 6),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF273247),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '+${familyMemberCount - 3}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFDEE5FF),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
-              const Text(
-                'View Details',
-                style: TextStyle(
-                  color: Color(0xFF74B1FF),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+              GestureDetector(
+                onTap: onViewDetails,
+                child: const Text(
+                  'View Details',
+                  style: TextStyle(
+                    color: Color(0xFF74B1FF),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -864,48 +995,12 @@ class _DogHeroCard extends StatelessWidget {
   }
 }
 
-class _PetAvatarBubble extends StatelessWidget {
-  final String name;
-  final String photoUrl;
-
-  const _PetAvatarBubble({
-    required this.name,
-    required this.photoUrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: const BoxDecoration(
-        color: Color(0xFF213458),
-        shape: BoxShape.circle,
-      ),
-      child: photoUrl.isNotEmpty
-          ? ClipOval(
-              child: Image.network(photoUrl, fit: BoxFit.cover),
-            )
-          : Center(
-              child: Text(
-                name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-                style: const TextStyle(
-                  color: Color(0xFF74B1FF),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-    );
-  }
-}
-
 class _ScheduleItem extends StatelessWidget {
   final IconData icon;
   final Color iconBg;
   final Color iconColor;
   final String title;
   final String subtitle;
-  final bool highlighted;
 
   const _ScheduleItem({
     required this.icon,
@@ -913,7 +1008,6 @@ class _ScheduleItem extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
-    this.highlighted = false,
   });
 
   @override

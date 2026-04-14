@@ -1,15 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../services/event_service.dart';
+import '../services/family_service.dart';
 import 'home_screen.dart';
 
 class NewEventScreen extends StatefulWidget {
-  const NewEventScreen({super.key});
+  final String? familyId;
+  final String? petId;
+
+  const NewEventScreen({
+    super.key,
+    this.familyId,
+    this.petId,
+  });
 
   @override
   State<NewEventScreen> createState() => _NewEventScreenState();
 }
 
 class _NewEventScreenState extends State<NewEventScreen> {
+  final EventService _eventService = EventService();
+  final FamilyService _familyService = FamilyService();
+
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
 
@@ -79,6 +91,79 @@ class _NewEventScreenState extends State<NewEventScreen> {
       ),
       (route) => false,
     );
+  }
+
+  Future<String?> _resolveFamilyId() async {
+    if (widget.familyId != null && widget.familyId!.trim().isNotEmpty) {
+      return widget.familyId!.trim();
+    }
+
+    final families = await _familyService.streamFamiliesForCurrentUser().first;
+    if (families.isEmpty) {
+      return null;
+    }
+
+    return families.first.id;
+  }
+
+  Future<void> _saveEvent() async {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa un título para el evento.')),
+      );
+      return;
+    }
+
+    if (_selectedDate == null || _selectedTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona fecha y hora del evento.')),
+      );
+      return;
+    }
+
+    final familyId = await _resolveFamilyId();
+    if (familyId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Primero crea una familia para guardar eventos.')),
+      );
+      return;
+    }
+
+    final date = _selectedDate!;
+    final time = _selectedTime!;
+    final scheduledAt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    final category = _categories[_selectedCategory].label.replaceAll('\n', ' ').toLowerCase();
+
+    try {
+      await _eventService.addEvent(
+        familyId: familyId,
+        petId: widget.petId,
+        title: title,
+        scheduledAt: scheduledAt,
+        note: _noteController.text.trim(),
+        category: category,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Evento guardado correctamente.')),
+      );
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo guardar el evento.')),
+      );
+    }
   }
 
   String _dateLabel() {
@@ -348,9 +433,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                             ],
                           ),
                           child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
+                            onPressed: _saveEvent,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.transparent,
                               shadowColor: Colors.transparent,

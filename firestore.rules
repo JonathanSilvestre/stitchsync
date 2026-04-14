@@ -44,6 +44,12 @@ service cloud.firestore {
           get(/databases/$(database)/documents/families/$(familyId)).data
         );
       }
+
+      match /events/{eventId} {
+        allow read, create, update, delete: if isFamilyMemberData(
+          get(/databases/$(database)/documents/families/$(familyId)).data
+        );
+      }
     }
 
     match /invitations/{invitationId} {
