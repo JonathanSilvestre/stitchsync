@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/event_service.dart';
 import '../services/family_service.dart';
+import '../services/pet_service.dart';
 import 'home_screen.dart';
 
 class NewEventScreen extends StatefulWidget {
   final String? familyId;
   final String? petId;
+  final String? eventId;
+  final Map<String, dynamic>? initialEventData;
 
   const NewEventScreen({
     super.key,
     this.familyId,
     this.petId,
+    this.eventId,
+    this.initialEventData,
   });
 
   @override
@@ -21,6 +27,7 @@ class NewEventScreen extends StatefulWidget {
 class _NewEventScreenState extends State<NewEventScreen> {
   final EventService _eventService = EventService();
   final FamilyService _familyService = FamilyService();
+  final PetService _petService = PetService();
 
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
@@ -28,6 +35,9 @@ class _NewEventScreenState extends State<NewEventScreen> {
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   int _selectedCategory = 1;
+  int _selectedRecurrence = 0;
+  final TextEditingController _customDaysController = TextEditingController(text: '2');
+  bool _isSaving = false;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF192540);
@@ -37,6 +47,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
 
   final List<_CategoryItem> _categories = const [
     _CategoryItem(Icons.medical_services_rounded, 'Vet', Color(0xFFE8AAFF)),
+    _CategoryItem(Icons.vaccines_rounded, 'Vaccines', Color(0xFFE8AAFF)),
     _CategoryItem(Icons.directions_walk_rounded, 'Walk', Color(0xFF74B1FF)),
     _CategoryItem(Icons.content_cut_rounded, 'Grooming', Color(0xFF82C2FF)),
     _CategoryItem(Icons.restaurant_rounded, 'Food', Color(0xFF74B1FF)),
@@ -47,10 +58,72 @@ class _NewEventScreenState extends State<NewEventScreen> {
     _CategoryItem(Icons.cleaning_services_rounded, 'Wet Wipes', Color(0xFF74B1FF)),
   ];
 
+  static const List<_RecurrenceItem> _recurrenceOptions = [
+    _RecurrenceItem('No Repeat', 'none'),
+    _RecurrenceItem('Day by Day', 'daily'),
+    _RecurrenceItem('Month by Month', 'monthly'),
+    _RecurrenceItem('Year by Year', 'yearly'),
+    _RecurrenceItem('Custom (Days)', 'custom_days'),
+  ];
+
+  bool get _isEditing => widget.eventId != null && widget.eventId!.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrateInitialValues();
+  }
+
+  void _hydrateInitialValues() {
+    final data = widget.initialEventData;
+    if (data == null) {
+      return;
+    }
+
+    final title = (data['title'] as String?)?.trim();
+    if (title != null && title.isNotEmpty) {
+      _titleController.text = title;
+    }
+
+    final note = (data['note'] as String?)?.trim();
+    if (note != null && note.isNotEmpty) {
+      _noteController.text = note;
+    }
+
+    final ts = data['scheduled_at'];
+    if (ts is Timestamp) {
+      final dt = ts.toDate();
+      _selectedDate = DateTime(dt.year, dt.month, dt.day);
+      _selectedTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+    }
+
+    final category = ((data['category'] as String?) ?? '').trim().toLowerCase();
+    if (category.isNotEmpty) {
+      final idx = _categories.indexWhere(
+        (item) => item.label.replaceAll('\n', ' ').toLowerCase() == category,
+      );
+      if (idx >= 0) {
+        _selectedCategory = idx;
+      }
+    }
+
+    final recurrence = ((data['recurrence'] as String?) ?? 'none').trim().toLowerCase();
+    final recurrenceIndex = _recurrenceOptions.indexWhere((item) => item.value == recurrence);
+    if (recurrenceIndex >= 0) {
+      _selectedRecurrence = recurrenceIndex;
+    }
+
+    final interval = data['recurrence_interval_days'];
+    if (interval is int && interval > 0) {
+      _customDaysController.text = interval.toString();
+    }
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
     _noteController.dispose();
+    _customDaysController.dispose();
     super.dispose();
   }
 
@@ -106,62 +179,163 @@ class _NewEventScreenState extends State<NewEventScreen> {
     return families.first.id;
   }
 
+  Future<String?> _resolvePetId(String familyId) async {
+    final initialPetId = (widget.initialEventData?['pet_id'] as String?)?.trim();
+    if (initialPetId != null && initialPetId.isNotEmpty) {
+      return initialPetId;
+    }
+
+    if (widget.petId != null && widget.petId!.trim().isNotEmpty) {
+      return widget.petId!.trim();
+    }
+
+    final pets = await _petService.streamPets(familyId).first;
+    if (pets.isEmpty) {
+      return null;
+    }
+
+    return pets.first.id;
+  }
+
   Future<void> _saveEvent() async {
+    if (_isSaving) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Ingresa un título para el evento.')),
       );
       return;
     }
 
     if (_selectedDate == null || _selectedTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Selecciona fecha y hora del evento.')),
       );
       return;
     }
 
-    final familyId = await _resolveFamilyId();
-    if (familyId == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero crea una familia para guardar eventos.')),
-      );
-      return;
-    }
-
-    final date = _selectedDate!;
-    final time = _selectedTime!;
-    final scheduledAt = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
-
-    final category = _categories[_selectedCategory].label.replaceAll('\n', ' ').toLowerCase();
+    setState(() {
+      _isSaving = true;
+    });
 
     try {
-      await _eventService.addEvent(
-        familyId: familyId,
-        petId: widget.petId,
-        title: title,
-        scheduledAt: scheduledAt,
-        note: _noteController.text.trim(),
-        category: category,
+      final familyId = await _resolveFamilyId();
+      if (familyId == null) {
+        if (!mounted) return;
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Primero crea una familia para guardar eventos.')),
+        );
+        return;
+      }
+
+      final petId = await _resolvePetId(familyId);
+      if (petId == null) {
+        if (!mounted) return;
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Necesitas al menos una mascota para crear eventos.')),
+        );
+        return;
+      }
+
+      final date = _selectedDate!;
+      final time = _selectedTime!;
+      final scheduledAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
       );
 
+      final category = _categories[_selectedCategory].label.replaceAll('\n', ' ').toLowerCase();
+      final recurrence = _recurrenceOptions[_selectedRecurrence].value;
+      final recurrenceIntervalDays = recurrence == 'custom_days'
+          ? int.tryParse(_customDaysController.text.trim()) ?? 0
+          : 1;
+
+      if (recurrence == 'custom_days' && recurrenceIntervalDays < 1) {
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          const SnackBar(content: Text('En repeticion personalizada, ingresa un numero mayor a 0.')),
+        );
+        return;
+      }
+
+      if (_isEditing) {
+        await _eventService.updateEvent(
+          familyId: familyId,
+          eventId: widget.eventId!.trim(),
+          petId: petId,
+          title: title,
+          scheduledAt: scheduledAt,
+          note: _noteController.text.trim(),
+          category: category,
+          recurrence: recurrence,
+          recurrenceIntervalDays: recurrenceIntervalDays,
+        );
+      } else {
+        await _eventService.addEvent(
+          familyId: familyId,
+          petId: petId,
+          title: title,
+          scheduledAt: scheduledAt,
+          note: _noteController.text.trim(),
+          category: category,
+          recurrence: recurrence,
+          recurrenceIntervalDays: recurrenceIntervalDays,
+        );
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Evento guardado correctamente.')),
+      setState(() {
+        _isSaving = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            _isEditing ? 'Cambios guardados correctamente.' : 'Evento guardado correctamente.',
+          ),
+        ),
       );
       Navigator.of(context).pop();
-    } catch (_) {
+    } on FirebaseException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo guardar el evento.')),
+      setState(() {
+        _isSaving = false;
+      });
+
+      if (e.code == 'permission-denied') {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No tienes permisos para escribir eventos en esta familia. Verifica reglas de Firestore y membresia.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo guardar el evento: ${e.message ?? e.code}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo guardar el evento: $e')),
       );
     }
   }
@@ -226,8 +400,8 @@ class _NewEventScreenState extends State<NewEventScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Add Event',
+                        Text(
+                          _isEditing ? 'Edit Event' : 'Add Event',
                           style: TextStyle(
                             color: _textMain,
                             fontSize: 44,
@@ -268,6 +442,56 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           icon: Icons.schedule,
                           onTap: _pickTime,
                         ),
+                        const SizedBox(height: 18),
+                        const _FieldLabel('REPEAT'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(_recurrenceOptions.length, (index) {
+                            final item = _recurrenceOptions[index];
+                            final selected = _selectedRecurrence == index;
+
+                            return InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedRecurrence = index;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: selected ? const Color(0xFF27446E) : _surface,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: selected
+                                      ? Border.all(color: const Color(0xFF74B1FF), width: 1)
+                                      : null,
+                                ),
+                                child: Text(
+                                  item.label,
+                                  style: TextStyle(
+                                    color:
+                                        selected ? const Color(0xFFDEE5FF) : const Color(0xFFBAC7E0),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        if (_recurrenceOptions[_selectedRecurrence].value == 'custom_days') ...[
+                          const SizedBox(height: 10),
+                          _InputField(
+                            controller: _customDaysController,
+                            hint: 'Every how many days? (e.g. 3)',
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         const _FieldLabel('CATEGORY'),
                         const SizedBox(height: 10),
@@ -433,7 +657,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                             ],
                           ),
                           child: ElevatedButton(
-                            onPressed: _saveEvent,
+                            onPressed: _isSaving ? null : _saveEvent,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.transparent,
                               shadowColor: Colors.transparent,
@@ -447,7 +671,16 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                 fontSize: 18,
                               ),
                             ),
-                            child: const Text('Save Event'),
+                            child: _isSaving
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: Color(0xFF0A2550),
+                                    ),
+                                  )
+                                : Text(_isEditing ? 'Save Changes' : 'Save Event'),
                           ),
                         ),
                       ],
@@ -525,11 +758,13 @@ class _InputField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final bool focused;
+  final TextInputType? keyboardType;
 
   const _InputField({
     required this.controller,
     required this.hint,
     this.focused = false,
+    this.keyboardType,
   });
 
   @override
@@ -550,6 +785,7 @@ class _InputField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
+        keyboardType: keyboardType,
         style: const TextStyle(color: Color(0xFFCED7EC), fontSize: 16),
         decoration: InputDecoration(
           hintText: hint,
@@ -705,4 +941,11 @@ class _CategoryItem {
   final Color color;
 
   const _CategoryItem(this.icon, this.label, this.color);
+}
+
+class _RecurrenceItem {
+  final String label;
+  final String value;
+
+  const _RecurrenceItem(this.label, this.value);
 }

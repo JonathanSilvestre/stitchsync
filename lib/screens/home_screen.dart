@@ -563,16 +563,95 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currentIndex == 1) {
       return Scaffold(
         backgroundColor: _bg,
-        body: CalendarTabContent(
-          onNewEvent: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => NewEventScreen(
-                  familyId: _selectedFamilyId,
-                  petId: _selectedPetId,
-                ),
-              ),
+        body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: _familyService.streamFamiliesForCurrentUser(),
+          builder: (context, familySnapshot) {
+            final families = familySnapshot.data ?? const [];
+
+            if (familySnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (families.isEmpty) {
+              return CalendarTabContent(
+                familyId: null,
+                petId: null,
+                selectedPetName: null,
+                onNewEvent: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NewEventScreen(),
+                    ),
+                  );
+                },
+              );
+            }
+
+            final familyId = _selectedFamilyId != null &&
+                    families.any((family) => family.id == _selectedFamilyId)
+                ? _selectedFamilyId!
+                : families.first.id;
+
+            if (_profileLoaded && _selectedFamilyId != familyId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() {
+                  _selectedFamilyId = familyId;
+                });
+              });
+            }
+
+            return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+              stream: _petService.streamPets(familyId),
+              builder: (context, petSnapshot) {
+                final pets = petSnapshot.data ?? const [];
+
+                if (petSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                String? selectedPetId = _selectedPetId;
+                String? selectedPetName;
+
+                if (pets.isNotEmpty) {
+                  final selectedIndex = pets.indexWhere((pet) => pet.id == _selectedPetId);
+                  final selectedPet = selectedIndex >= 0 ? pets[selectedIndex] : pets.first;
+                  selectedPetId = selectedPet.id;
+                  selectedPetName = (selectedPet.data()['name'] as String?)?.trim();
+
+                  if (_profileLoaded && _selectedPetId != selectedPetId) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      setState(() {
+                        _selectedFamilyId = familyId;
+                        _selectedPetId = selectedPetId;
+                      });
+                      _persistActivePetSelection(
+                        familyId: familyId,
+                        petId: selectedPetId!,
+                      );
+                    });
+                  }
+                }
+
+                return CalendarTabContent(
+                  familyId: familyId,
+                  petId: selectedPetId,
+                  selectedPetName: selectedPetName,
+                  onNewEvent: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NewEventScreen(
+                          familyId: familyId,
+                          petId: selectedPetId,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             );
           },
         ),
