@@ -14,12 +14,82 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid in data.member_uids;
     }
 
+    function familyAdminUids(data) {
+      return data.keys().hasAny(['admin_uids']) ? data.admin_uids : [data.owner_uid];
+    }
+
     function isFamilyOwnerData(data) {
       return isSignedIn() && data.owner_uid == request.auth.uid;
     }
 
+    function isFamilyAdminData(data) {
+      return isSignedIn() && request.auth.uid in familyAdminUids(data);
+    }
+
+    function isFamilySelfJoinUpdate() {
+      return isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'member_uids',
+          'updated_at'
+        ]) &&
+        request.resource.data.member_uids.hasAll(resource.data.member_uids) &&
+        request.auth.uid in request.resource.data.member_uids &&
+        request.resource.data.member_uids.size() == resource.data.member_uids.size() + 1;
+    }
+
+    function isFamilySelfLeaveUpdate() {
+      return isSignedIn() &&
+        request.auth.uid in resource.data.member_uids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'member_uids',
+          'updated_at'
+        ]) &&
+        !(request.auth.uid in request.resource.data.member_uids) &&
+        resource.data.member_uids.hasAll(request.resource.data.member_uids) &&
+        request.resource.data.member_uids.size() == resource.data.member_uids.size() - 1;
+    }
+
+    function isFamilyMemberPair(familyId, otherUid) {
+      return exists(/databases/$(database)/documents/families/$(familyId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.member_uids &&
+        otherUid in get(/databases/$(database)/documents/families/$(familyId)).data.member_uids;
+    }
+
+    function familyIdsFromData(data) {
+      return data.keys().hasAny(['family_ids']) ? data.family_ids : [];
+    }
+
+    function sharesFamilyWithUser(otherUid) {
+      let selfDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let familyIds = familyIdsFromData(selfDoc.data);
+
+      return isSignedIn() && (
+        (familyIds.size() > 0 && isFamilyMemberPair(familyIds[0], otherUid)) ||
+        (familyIds.size() > 1 && isFamilyMemberPair(familyIds[1], otherUid)) ||
+        (familyIds.size() > 2 && isFamilyMemberPair(familyIds[2], otherUid)) ||
+        (familyIds.size() > 3 && isFamilyMemberPair(familyIds[3], otherUid)) ||
+        (familyIds.size() > 4 && isFamilyMemberPair(familyIds[4], otherUid)) ||
+        (familyIds.size() > 5 && isFamilyMemberPair(familyIds[5], otherUid))
+      );
+    }
+
+    function targetSharesFamilyWithRequester(targetUid) {
+      let targetDoc = get(/databases/$(database)/documents/users/$(targetUid));
+      let familyIds = familyIdsFromData(targetDoc.data);
+
+      return isSignedIn() && (
+        (familyIds.size() > 0 && isFamilyMemberPair(familyIds[0], targetUid)) ||
+        (familyIds.size() > 1 && isFamilyMemberPair(familyIds[1], targetUid)) ||
+        (familyIds.size() > 2 && isFamilyMemberPair(familyIds[2], targetUid)) ||
+        (familyIds.size() > 3 && isFamilyMemberPair(familyIds[3], targetUid)) ||
+        (familyIds.size() > 4 && isFamilyMemberPair(familyIds[4], targetUid)) ||
+        (familyIds.size() > 5 && isFamilyMemberPair(familyIds[5], targetUid))
+      );
+    }
+
     match /users/{uid} {
-      allow read, create, update, delete: if isSelf(uid);
+      allow read: if isSelf(uid) || sharesFamilyWithUser(uid) || targetSharesFamilyWithRequester(uid);
+      allow create, update, delete: if isSelf(uid);
     }
 
     match /usernames/{usernameLower} {
@@ -33,11 +103,16 @@ service cloud.firestore {
     }
 
     match /families/{familyId} {
-      allow read: if isFamilyMemberData(resource.data);
+      // Allows code-based family lookup for signed-in users.
+      allow read: if isFamilyMemberData(resource.data) || isSignedIn();
       allow create: if isSignedIn() &&
         request.resource.data.owner_uid == request.auth.uid &&
-        request.auth.uid in request.resource.data.member_uids;
-      allow update, delete: if isFamilyOwnerData(resource.data);
+        request.auth.uid in request.resource.data.member_uids &&
+        request.auth.uid in request.resource.data.admin_uids;
+      allow update: if isFamilyAdminData(resource.data) ||
+        isFamilySelfJoinUpdate() ||
+        isFamilySelfLeaveUpdate();
+      allow delete: if isFamilyOwnerData(resource.data);
 
       match /pets/{petId} {
         allow read, create, update, delete: if isFamilyMemberData(

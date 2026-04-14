@@ -5,6 +5,24 @@ class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  Future<String?> _resolveCurrentUsername() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return null;
+
+    final userDoc = await _firestore.collection('users').doc(uid).get();
+    final username = (userDoc.data()?['username'] as String?)?.trim();
+    if (username != null && username.isNotEmpty) {
+      return username;
+    }
+
+    final displayName = _auth.currentUser?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    return null;
+  }
+
   CollectionReference<Map<String, dynamic>> _eventsCollection(String familyId) {
     return _firestore.collection('families').doc(familyId).collection('events');
   }
@@ -161,6 +179,7 @@ class EventService {
       // ignore: use_null_aware_elements
       if (recurrenceIntervalDays != null)
         'recurrence_interval_days': recurrenceIntervalDays,
+      'completed': false,
       'recurrence_anchor_at': Timestamp.fromDate(anchorDate),
       'series_id': seriesId,
       'created_by_uid': uid,
@@ -290,6 +309,40 @@ class EventService {
     required String eventId,
   }) async {
     await _eventsCollection(familyId).doc(eventId).delete();
+  }
+
+  Future<void> setEventCompleted({
+    required String familyId,
+    required String eventId,
+    required bool completed,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+
+    if (uid == null) {
+      throw FirebaseAuthException(code: 'user-not-found');
+    }
+
+    if (completed) {
+      final username = await _resolveCurrentUsername();
+      await _eventsCollection(familyId).doc(eventId).update({
+        'completed': true,
+        'completed_at': FieldValue.serverTimestamp(),
+        'completed_by_uid': uid,
+        'completed_by_username': username,
+        'completed_by_email': FieldValue.delete(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    await _eventsCollection(familyId).doc(eventId).update({
+      'completed': false,
+      'completed_at': FieldValue.delete(),
+      'completed_by_uid': FieldValue.delete(),
+      'completed_by_username': FieldValue.delete(),
+      'completed_by_email': FieldValue.delete(),
+      'updated_at': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> deleteSeries({

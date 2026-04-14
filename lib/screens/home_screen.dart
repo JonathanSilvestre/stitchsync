@@ -312,14 +312,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
   IconData _eventIcon(String category, String title) {
     final lookup = '${category.toLowerCase()} ${title.toLowerCase()}';
+    if (lookup.contains('flea')) {
+      return Icons.medication_rounded;
+    }
+    if (lookup.contains('vet')) {
+      return Icons.medical_services_rounded;
+    }
+    if (lookup.contains('medications') ||
+        lookup.contains('medication') ||
+        lookup.contains('medicine') ||
+        lookup.contains('pill')) {
+      return Icons.local_pharmacy_rounded;
+    }
+    if (lookup.contains('vaccine') ||
+        lookup.contains('vacuna') ||
+        lookup.contains('booster') ||
+        lookup.contains('rabies')) {
+      return Icons.vaccines_rounded;
+    }
+    if (lookup.contains('groom') || lookup.contains('bath') || lookup.contains('hair')) {
+      return Icons.content_cut_rounded;
+    }
     if (lookup.contains('walk') || lookup.contains('exercise')) {
       return Icons.directions_walk;
     }
+    if (lookup.contains('treat')) {
+      return Icons.cookie_rounded;
+    }
+    if (lookup.contains('bag opening') || lookup.contains('bag')) {
+      return Icons.shopping_bag_rounded;
+    }
+    if (lookup.contains('wet wipe') || lookup.contains('clean')) {
+      return Icons.cleaning_services_rounded;
+    }
     if (lookup.contains('feed') || lookup.contains('food') || lookup.contains('meal')) {
       return Icons.restaurant;
-    }
-    if (lookup.contains('med') || lookup.contains('vet')) {
-      return Icons.medication;
     }
     return Icons.event;
   }
@@ -331,8 +358,20 @@ class _HomeScreenState extends State<HomeScreen> {
     if (icon == Icons.restaurant) {
       return (bg: const Color(0xFF3B2F23), fg: const Color(0xFFF0C686));
     }
-    if (icon == Icons.medication) {
+    if (icon == Icons.vaccines_rounded || icon == Icons.content_cut_rounded) {
+      return (bg: const Color(0xFF3A2E60), fg: const Color(0xFFE8AAFF));
+    }
+    if (icon == Icons.medication_rounded) {
+      return (bg: const Color(0xFF3A2E60), fg: const Color(0xFFFF7D7D));
+    }
+    if (icon == Icons.medical_services_rounded || icon == Icons.local_pharmacy_rounded) {
       return (bg: const Color(0xFF263D35), fg: const Color(0xFF95DEBA));
+    }
+    if (icon == Icons.cookie_rounded) {
+      return (bg: const Color(0xFF3B2F23), fg: const Color(0xFFF0C686));
+    }
+    if (icon == Icons.shopping_bag_rounded || icon == Icons.cleaning_services_rounded) {
+      return (bg: const Color(0xFF0B2A5D), fg: const Color(0xFF82C2FF));
     }
     return (bg: const Color(0xFF2A3045), fg: const Color(0xFF9FB0D1));
   }
@@ -349,6 +388,310 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<bool> _confirmDelete({
+    required String title,
+    required String actionLabel,
+  }) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _textMain,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, true),
+                    icon: const Icon(Icons.delete_outline, color: Color(0xFFFF8E8E)),
+                    label: Text(
+                      actionLabel,
+                      style: const TextStyle(
+                        color: Color(0xFFFF8E8E),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext, false),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: _textMuted,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
+  Future<void> _setEventCompleted({
+    required String familyId,
+    required String eventId,
+    required bool completed,
+  }) async {
+    try {
+      await _eventService.setEventCompleted(
+        familyId: familyId,
+        eventId: eventId,
+        completed: completed,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            completed ? 'Evento marcado como realizado.' : 'Evento marcado como pendiente.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo actualizar el estado del evento.')),
+      );
+    }
+  }
+
+  Future<void> _deleteEvent({
+    required String familyId,
+    required String eventId,
+    required String title,
+  }) async {
+    final shouldDelete = await _confirmDelete(
+      title: title,
+      actionLabel: 'Delete Event',
+    );
+    if (!shouldDelete) return;
+
+    try {
+      await _eventService.deleteEvent(familyId: familyId, eventId: eventId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Evento eliminado.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo eliminar el evento.')),
+      );
+    }
+  }
+
+  Future<void> _deleteSeries({
+    required String familyId,
+    required String seriesId,
+    required String title,
+  }) async {
+    final shouldDelete = await _confirmDelete(
+      title: title,
+      actionLabel: 'Delete Full Series',
+    );
+    if (!shouldDelete) return;
+
+    try {
+      await _eventService.deleteSeries(familyId: familyId, seriesId: seriesId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Serie eliminada.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo eliminar la serie.')),
+      );
+    }
+  }
+
+  Future<void> _openHomeEventActions({
+    required String familyId,
+    required QueryDocumentSnapshot<Map<String, dynamic>> eventDoc,
+    required String title,
+  }) async {
+    final data = eventDoc.data();
+    final seriesId = (data['series_id'] as String?)?.trim();
+    final hasSeries = seriesId != null && seriesId.isNotEmpty;
+    final isCompleted = (data['completed'] as bool?) ?? false;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'edit'),
+                    icon: const Icon(Icons.edit_outlined, color: _primary),
+                    label: const Text(
+                      'Edit Event',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'toggle_complete'),
+                    icon: Icon(
+                      isCompleted
+                          ? Icons.radio_button_unchecked_rounded
+                          : Icons.check_circle_outline_rounded,
+                      color: const Color(0xFF95DEBA),
+                    ),
+                    label: Text(
+                      isCompleted ? 'Mark as Pending' : 'Complete Event',
+                      style: const TextStyle(
+                        color: Color(0xFF95DEBA),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'delete_one'),
+                    icon: const Icon(Icons.delete_outline, color: Color(0xFFFF8E8E)),
+                    label: const Text(
+                      'Delete Event',
+                      style: TextStyle(
+                        color: Color(0xFFFF8E8E),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasSeries)
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () => Navigator.pop(sheetContext, 'delete_series'),
+                      icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF8E8E)),
+                      label: const Text(
+                        'Delete Full Series',
+                        style: TextStyle(
+                          color: Color(0xFFFF8E8E),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (action == null || !mounted) return;
+
+    if (action == 'edit') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => NewEventScreen(
+            familyId: familyId,
+            petId: (data['pet_id'] as String?)?.trim(),
+            eventId: eventDoc.id,
+            initialEventData: data,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (action == 'toggle_complete') {
+      await _setEventCompleted(
+        familyId: familyId,
+        eventId: eventDoc.id,
+        completed: !isCompleted,
+      );
+      return;
+    }
+
+    if (action == 'delete_one') {
+      await _deleteEvent(
+        familyId: familyId,
+        eventId: eventDoc.id,
+        title: title,
+      );
+      return;
+    }
+
+    if (action == 'delete_series' && hasSeries) {
+      await _deleteSeries(
+        familyId: familyId,
+        seriesId: seriesId,
+        title: title,
+      );
+    }
   }
 
   Widget _buildHomeBody({
@@ -497,13 +840,44 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         )
                       else
-                        Column(
-                          children: todayEvents.take(5).map((eventDoc) {
+                        Builder(
+                          builder: (_) {
+                            final sortedTodayEvents = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                              todayEvents,
+                            )
+                              ..sort((a, b) {
+                                final aData = a.data();
+                                final bData = b.data();
+
+                                final aCompleted = (aData['completed'] as bool?) ?? false;
+                                final bCompleted = (bData['completed'] as bool?) ?? false;
+                                final completedOrder =
+                                    (aCompleted ? 1 : 0).compareTo(bCompleted ? 1 : 0);
+                                if (completedOrder != 0) {
+                                  return completedOrder;
+                                }
+
+                                final aTimestamp = aData['scheduled_at'];
+                                final bTimestamp = bData['scheduled_at'];
+                                final aDate = aTimestamp is Timestamp
+                                    ? aTimestamp.toDate()
+                                    : DateTime.fromMillisecondsSinceEpoch(0);
+                                final bDate = bTimestamp is Timestamp
+                                    ? bTimestamp.toDate()
+                                    : DateTime.fromMillisecondsSinceEpoch(0);
+                                return aDate.compareTo(bDate);
+                              });
+
+                            return Column(
+                              children: sortedTodayEvents.take(5).map((eventDoc) {
                             final data = eventDoc.data();
                             final title = (data['title'] as String?)?.trim().isNotEmpty == true
                                 ? (data['title'] as String).trim()
                                 : 'Untitled event';
                             final note = (data['note'] as String?)?.trim() ?? '';
+                            final completed = (data['completed'] as bool?) ?? false;
+                            final completedByUsername =
+                                (data['completed_by_username'] as String?)?.trim();
                             final category = (data['category'] as String?)?.trim() ?? '';
                             final scheduledAt = data['scheduled_at'];
                             final timestamp =
@@ -511,9 +885,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             final icon = _eventIcon(category, title);
                             final palette = _eventPalette(icon);
 
-                            final subtitle = note.isNotEmpty
+                            final baseSubtitle = note.isNotEmpty
                                 ? '${_formatTimeLabel(timestamp)} • $note'
                                 : 'Today at ${_formatTimeLabel(timestamp)}';
+
+                            final subtitle = completed
+                                ? '$baseSubtitle\nCompleted by ${completedByUsername?.isNotEmpty == true ? completedByUsername : 'a family member'}'
+                                : baseSubtitle;
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 14),
@@ -521,11 +899,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                 icon: icon,
                                 iconBg: palette.bg,
                                 iconColor: palette.fg,
-                                title: title,
+                                title: completed ? 'Completed: $title' : title,
                                 subtitle: subtitle,
+                                completed: completed,
+                                onMoreTap: () => _openHomeEventActions(
+                                  familyId: familyId,
+                                  eventDoc: eventDoc,
+                                  title: title,
+                                ),
                               ),
                             );
                           }).toList(growable: false),
+                            );
+                          },
                         ),
                     ],
                   ),
@@ -1080,6 +1466,8 @@ class _ScheduleItem extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final bool completed;
+  final VoidCallback? onMoreTap;
 
   const _ScheduleItem({
     required this.icon,
@@ -1087,6 +1475,8 @@ class _ScheduleItem extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    this.completed = false,
+    this.onMoreTap,
   });
 
   @override
@@ -1094,7 +1484,9 @@ class _ScheduleItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _HomeScreenState._surfaceHigh,
+        color: completed
+            ? const Color(0xFF131D34)
+            : _HomeScreenState._surfaceHigh,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
@@ -1110,30 +1502,42 @@ class _ScheduleItem extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFFDEE5FF),
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
+            child: Opacity(
+              opacity: completed ? 0.72 : 1.0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: const Color(0xFFDEE5FF),
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      decoration:
+                          completed ? TextDecoration.lineThrough : TextDecoration.none,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFFA3AAC4),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFFA3AAC4),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const Icon(Icons.more_vert, color: Color(0xFF6E7890)),
+          InkWell(
+            onTap: onMoreTap,
+            borderRadius: BorderRadius.circular(10),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.more_vert, color: Color(0xFF6E7890)),
+            ),
+          ),
         ],
       ),
     );

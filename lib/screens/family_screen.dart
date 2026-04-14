@@ -24,6 +24,20 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  @override
+  void initState() {
+    super.initState();
+    _syncMembershipIndex();
+  }
+
+  Future<void> _syncMembershipIndex() async {
+    try {
+      await _familyService.syncCurrentUserFamilyIds();
+    } catch (_) {
+      // Best-effort sync; UI can continue with existing data.
+    }
+  }
+
   Future<void> _openCreateFamilyScreen() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -31,9 +45,88 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       ),
     );
 
+    await _syncMembershipIndex();
+
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _showJoinByCodeDialog() async {
+    String codeValue = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: _surfaceHigh,
+          title: const Text(
+            'Unirme con código',
+            style: TextStyle(color: _textMain),
+          ),
+          content: TextFormField(
+            onChanged: (value) => codeValue = value,
+            textCapitalization: TextCapitalization.characters,
+            style: const TextStyle(color: _textMain),
+            decoration: const InputDecoration(
+              labelText: 'Código de invitación',
+              hintText: 'Ej. STITCH-ABC',
+              labelStyle: TextStyle(color: _textMuted),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final code = codeValue.trim();
+                if (code.isEmpty) {
+                  return;
+                }
+
+                try {
+                  await _familyService.joinFamilyByInviteCode(inviteCode: code);
+                  await _syncMembershipIndex();
+
+                  if (!dialogContext.mounted) {
+                    return;
+                  }
+
+                  Navigator.of(dialogContext).pop();
+
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Te uniste a la familia correctamente.')),
+                  );
+
+                  setState(() {});
+                } on FirebaseException catch (e) {
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e is FirebaseAuthException
+                            ? _familyService.getReadableError(e)
+                            : (e.message ?? 'No se pudo unir a la familia.'),
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Unirme'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showInviteDialog({
@@ -110,7 +203,144 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     );
   }
 
-  Future<List<_MemberData>> _loadMembers(List<dynamic> memberUids, String ownerUid) async {
+  Future<void> _showMemberActions({
+    required String familyId,
+    required _MemberData member,
+    required bool canManage,
+  }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid == null || member.uid == currentUid || !canManage || member.isAdmin) {
+      return;
+    }
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'make_admin'),
+                    icon: const Icon(Icons.shield_outlined, color: _primary),
+                    label: const Text(
+                      'Asignar como administrador',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (action != 'make_admin') return;
+
+    try {
+      await _familyService.promoteMemberToAdmin(
+        familyId: familyId,
+        memberUid: member.uid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Miembro promovido a administrador.')),
+      );
+      setState(() {});
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_familyService.getReadableError(e))),
+      );
+    }
+  }
+
+  Future<void> _leaveCurrentFamily({
+    required String familyId,
+    required bool isCurrentUserAdmin,
+    required bool hasAnotherAdmin,
+  }) async {
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceHigh,
+        title: const Text('Salir de la familia', style: TextStyle(color: _textMain)),
+        content: Text(
+          isCurrentUserAdmin && !hasAnotherAdmin
+              ? 'Eres el único administrador. Primero asigna otro administrador para poder salir.'
+              : '¿Seguro que quieres salir de esta familia?',
+          style: const TextStyle(color: _textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLeave != true) return;
+
+    if (isCurrentUserAdmin && !hasAnotherAdmin) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes asignar otro administrador antes de salir.')),
+      );
+      return;
+    }
+
+    try {
+      await _familyService.leaveFamily(familyId: familyId);
+      await _syncMembershipIndex();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saliste de la familia.')),
+      );
+      setState(() {});
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_familyService.getReadableError(e))),
+      );
+    }
+  }
+
+  Future<List<_MemberData>> _loadMembers(
+    List<dynamic> memberUids,
+    String ownerUid,
+    List<dynamic> adminUids,
+  ) async {
+    final adminSet = adminUids.map((e) => e.toString()).toSet();
+
     final docs = await Future.wait(
       memberUids.map(
         (uid) => _firestore.collection('users').doc(uid as String).get(),
@@ -120,11 +350,12 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     return docs.map((doc) {
       final data = doc.data() ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
+      final isAdmin = adminSet.contains(doc.id) || doc.id == ownerUid;
       return _MemberData(
         uid: doc.id,
         name: (username != null && username.isNotEmpty) ? username : 'Member',
-        subtitle: doc.id == ownerUid ? 'Primary Caretaker' : 'Family Member',
-        isAdmin: doc.id == ownerUid,
+        subtitle: isAdmin ? 'Primary Caretaker' : 'Family Member',
+        isAdmin: isAdmin,
       );
     }).toList();
   }
@@ -173,6 +404,12 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
         final familyName = hasFamily ? (data['name'] as String?) ?? 'My Family' : 'My Family';
         final ownerUid = (data['owner_uid'] as String?) ?? '';
         final memberUids = (data['member_uids'] as List<dynamic>? ?? const []);
+        final adminUids =
+            (data['admin_uids'] as List<dynamic>? ?? <dynamic>[ownerUid]).toSet().toList();
+        final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final isCurrentUserAdmin = adminUids.contains(currentUid) || ownerUid == currentUid;
+        final hasAnotherAdmin =
+            adminUids.any((uid) => uid.toString() != currentUid) || ownerUid != currentUid;
         final inviteCode = hasFamily ? _buildInviteCode(familyName, family!.id) : '-- -- --';
 
         return Container(
@@ -347,6 +584,27 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                 height: 1.45,
                               ),
                             ),
+                            if (!hasFamily) ...[
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _showJoinByCodeDialog,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.40),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  icon: const Icon(Icons.group_add_rounded),
+                                  label: const Text(
+                                    'Unirme con código',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -383,7 +641,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                         const SizedBox(height: 10),
                         FutureBuilder<List<_MemberData>>(
-                          future: _loadMembers(memberUids, ownerUid),
+                          future: _loadMembers(memberUids, ownerUid, adminUids),
                           builder: (context, membersSnapshot) {
                             if (membersSnapshot.connectionState == ConnectionState.waiting) {
                               return const Center(child: CircularProgressIndicator());
@@ -463,9 +721,22 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                             ),
                                           )
                                         else
-                                          const Icon(
-                                            Icons.more_vert,
-                                            color: Color(0xFF7D889E),
+                                          InkWell(
+                                            onTap: () {
+                                              _showMemberActions(
+                                                familyId: family!.id,
+                                                member: member,
+                                                canManage: isCurrentUserAdmin,
+                                              );
+                                            },
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(4),
+                                              child: Icon(
+                                                Icons.more_vert,
+                                                color: Color(0xFF7D889E),
+                                              ),
+                                            ),
                                           ),
                                       ],
                                     ),
@@ -531,6 +802,29 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                               ],
                             );
                           },
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              _leaveCurrentFamily(
+                                familyId: family!.id,
+                                isCurrentUserAdmin: isCurrentUserAdmin,
+                                hasAnotherAdmin: hasAnotherAdmin,
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFFFA3A3),
+                              side: const BorderSide(color: Color(0xFFFF8E8E)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.exit_to_app_rounded),
+                            label: const Text(
+                              'Salir de la familia',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
                         ),
                       ],
                       const SizedBox(height: 18),

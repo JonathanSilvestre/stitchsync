@@ -52,6 +52,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
     _CategoryItem(Icons.content_cut_rounded, 'Grooming', Color(0xFF82C2FF)),
     _CategoryItem(Icons.restaurant_rounded, 'Food', Color(0xFF74B1FF)),
     _CategoryItem(Icons.medication_rounded, 'Flea Pipette', Color(0xFFFF7D7D)),
+    _CategoryItem(Icons.local_pharmacy_rounded, 'Medications', Color(0xFF95DEBA)),
     _CategoryItem(Icons.inventory_2_rounded, 'Food\nOpening', Color(0xFFE8AAFF)),
     _CategoryItem(Icons.cookie_rounded, 'Treats', Color(0xFF74B1FF)),
     _CategoryItem(Icons.shopping_bag_rounded, 'Bag\nOpening', Color(0xFF8DB6FF)),

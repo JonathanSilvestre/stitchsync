@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -24,6 +26,7 @@ class CalendarTabContent extends StatefulWidget {
 
 class _CalendarTabContentState extends State<CalendarTabContent> {
   final EventService _eventService = EventService();
+  late final String _randomProTip;
 
   static const List<String> _monthNames = [
     'January',
@@ -40,12 +43,28 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     'December',
   ];
 
+  static const List<String> _proTips = [
+    'If a task takes less than two minutes, add it right away to keep momentum.',
+    'Group similar pet tasks together to reduce stress for your dog.',
+    'Set medical reminders earlier in the day to avoid missing the clinic schedule.',
+    'Attach a short note to each event so family members know the exact expectation.',
+    'Use recurring events for routines and one-time events for exceptions.',
+    'After completing a task, mark it as done immediately so everyone sees the latest status.',
+    'For grooming or vet appointments, prepare supplies the night before.',
+  ];
+
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _selectedDay = DateTime(
     DateTime.now().year,
     DateTime.now().month,
     DateTime.now().day,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _randomProTip = _proTips[Random().nextInt(_proTips.length)];
+  }
 
   DateTime get _minMonth {
     final now = DateTime.now();
@@ -131,6 +150,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     return c.contains('vet') ||
         c.contains('vaccine') ||
         c.contains('vacuna') ||
+        c.contains('medication') ||
+        c.contains('medicine') ||
         c.contains('med') ||
         c.contains('flea') ||
         c.contains('groom') ||
@@ -142,13 +163,26 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   IconData _eventIcon({required String category, required String title}) {
     final lookup = '${category.toLowerCase()} ${title.toLowerCase()}';
 
+    if (lookup.contains('flea')) {
+      return Icons.medication_rounded;
+    }
+    if (lookup.contains('vet')) {
+      return Icons.medical_services_rounded;
+    }
+    if (lookup.contains('medications') ||
+        lookup.contains('medication') ||
+        lookup.contains('medicine') ||
+        lookup.contains('pill')) {
+      return Icons.local_pharmacy_rounded;
+    }
+
     if (lookup.contains('vaccine') ||
         lookup.contains('vacuna') ||
         lookup.contains('booster') ||
         lookup.contains('rabies')) {
       return Icons.vaccines_rounded;
     }
-    if (lookup.contains('vet') || lookup.contains('med') || lookup.contains('health')) {
+    if (lookup.contains('med') || lookup.contains('health')) {
       return Icons.medical_services_outlined;
     }
     if (lookup.contains('groom')) {
@@ -167,8 +201,16 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   }
 
   ({Color bg, Color fg}) _iconPalette(IconData icon) {
-    if (icon == Icons.vaccines_rounded || icon == Icons.medical_services_outlined) {
+    if (icon == Icons.vaccines_rounded ||
+        icon == Icons.medical_services_outlined ||
+        icon == Icons.medical_services_rounded) {
       return (bg: const Color(0xFF3A2E60), fg: const Color(0xFFE8AAFF));
+    }
+    if (icon == Icons.medication_rounded) {
+      return (bg: const Color(0xFF3A2E60), fg: const Color(0xFFFF7D7D));
+    }
+    if (icon == Icons.local_pharmacy_rounded) {
+      return (bg: const Color(0xFF263D35), fg: const Color(0xFF95DEBA));
     }
     if (icon == Icons.content_cut_rounded) {
       return (bg: const Color(0xFF0B2A5D), fg: const Color(0xFF82C2FF));
@@ -314,6 +356,33 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     }
   }
 
+  Future<void> _setEventCompleted({
+    required String familyId,
+    required String eventId,
+    required bool completed,
+  }) async {
+    try {
+      await _eventService.setEventCompleted(
+        familyId: familyId,
+        eventId: eventId,
+        completed: completed,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            completed ? 'Evento marcado como realizado.' : 'Evento marcado como pendiente.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo actualizar el estado del evento.')),
+      );
+    }
+  }
+
   Future<void> _openEventActions({
     required String familyId,
     required QueryDocumentSnapshot<Map<String, dynamic>> eventDoc,
@@ -322,6 +391,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     final data = eventDoc.data();
     final seriesId = (data['series_id'] as String?)?.trim();
     final hasSeries = seriesId != null && seriesId.isNotEmpty;
+    final isCompleted = (data['completed'] as bool?) ?? false;
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -357,6 +427,25 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                       'Edit Event',
                       style: TextStyle(
                         color: Color(0xFFDEE5FF),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'toggle_complete'),
+                    icon: Icon(
+                      isCompleted
+                          ? Icons.radio_button_unchecked_rounded
+                          : Icons.check_circle_outline_rounded,
+                      color: const Color(0xFF95DEBA),
+                    ),
+                    label: Text(
+                      isCompleted ? 'Mark as Pending' : 'Complete Event',
+                      style: const TextStyle(
+                        color: Color(0xFF95DEBA),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -423,6 +512,15 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
       return;
     }
 
+    if (action == 'toggle_complete') {
+      await _setEventCompleted(
+        familyId: familyId,
+        eventId: eventDoc.id,
+        completed: !isCompleted,
+      );
+      return;
+    }
+
     if (action == 'delete_series' && hasSeries) {
       await _deleteSeries(
         familyId: familyId,
@@ -461,6 +559,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
         reminderIcon: Icons.notifications_none_rounded,
         reminderIconBg: const Color(0xFF0B2A5D),
         reminderIconColor: const Color(0xFF74B1FF),
+        proTipText: _randomProTip,
         eventCards: const [
           _EventCard(
             accent: Color(0xFF74B1FF),
@@ -574,18 +673,31 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                     : 'Event • $_selectedPetName';
                 final note = (data['note'] as String?)?.trim();
                 final category = (data['category'] as String?)?.trim();
+                final completed = (data['completed'] as bool?) ?? false;
+                final completedBy = (data['completed_by_username'] as String?)?.trim();
                 final chip =
-                    category != null && category.isNotEmpty ? category.toUpperCase() : null;
+                  completed
+                    ? 'DONE'
+                    : (category != null && category.isNotEmpty ? category.toUpperCase() : null);
+
+                final baseNote = note != null && note.isNotEmpty ? note : null;
+                final completionNote = completed
+                  ? 'Completed by ${completedBy?.isNotEmpty == true ? completedBy : 'a family member'}'
+                  : null;
+                final combinedNote = baseNote != null && completionNote != null
+                  ? '$baseNote\n$completionNote'
+                  : (completionNote ?? baseNote);
 
                 return _EventCard(
                   accent: const Color(0xFF74B1FF),
                   timeTop: _eventTimeTop(item.when),
                   timeBottom: _eventTimeBottom(item.when),
-                  title: title,
+                  title: completed ? 'Completed: $title' : title,
                   location: _eventLocation(data),
-                  note: note != null && note.isNotEmpty ? note : null,
+                  note: combinedNote,
                   chip: chip,
                   avatars: false,
+                  completed: completed,
                   onMoreTap: () => _openEventActions(
                     familyId: familyId,
                     eventDoc: item.doc,
@@ -618,6 +730,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
           reminderIcon: reminderIcon,
           reminderIconBg: reminderPalette.bg,
           reminderIconColor: reminderPalette.fg,
+          proTipText: _randomProTip,
           eventCards: eventCards,
         );
       },
@@ -645,6 +758,7 @@ class _CalendarContent extends StatelessWidget {
   final IconData reminderIcon;
   final Color reminderIconBg;
   final Color reminderIconColor;
+  final String proTipText;
   final List<Widget> eventCards;
 
   const _CalendarContent({
@@ -667,6 +781,7 @@ class _CalendarContent extends StatelessWidget {
     required this.reminderIcon,
     required this.reminderIconBg,
     required this.reminderIconColor,
+    required this.proTipText,
     required this.eventCards,
   });
 
@@ -867,10 +982,10 @@ class _CalendarContent extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  child: const Column(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Pro Tip',
                         style: TextStyle(
                           color: _textMain,
@@ -881,8 +996,8 @@ class _CalendarContent extends StatelessWidget {
                       ),
                       SizedBox(height: 10),
                       Text(
-                        'Keeping a consistent schedule for your pet helps reduce anxiety and improves daily wellbeing.',
-                        style: TextStyle(
+                        proTipText,
+                        style: const TextStyle(
                           color: _textMuted,
                           fontSize: 17,
                           height: 1.4,
@@ -1232,6 +1347,7 @@ class _EventCard extends StatelessWidget {
   final String? note;
   final String? chip;
   final bool avatars;
+  final bool completed;
   final VoidCallback? onMoreTap;
 
   const _EventCard({
@@ -1243,6 +1359,7 @@ class _EventCard extends StatelessWidget {
     required this.note,
     required this.chip,
     required this.avatars,
+    this.completed = false,
     this.onMoreTap,
   });
 
@@ -1250,10 +1367,12 @@ class _EventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0F1930), Color(0xFF132445)],
+          colors: completed
+              ? const [Color(0xFF0C1528), Color(0xFF0E1B33)]
+              : const [Color(0xFF0F1930), Color(0xFF132445)],
         ),
         borderRadius: BorderRadius.circular(20),
       ),
@@ -1273,9 +1392,11 @@ class _EventCard extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 14, 14, 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              child: Opacity(
+                opacity: completed ? 0.72 : 1.0,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   SizedBox(
                     width: 52,
                     child: Column(
@@ -1307,11 +1428,12 @@ class _EventCard extends StatelessWidget {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(
-                            color: Color(0xFFE7ECFB),
+                          style: TextStyle(
+                            color: const Color(0xFFE7ECFB),
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.2,
+                            decoration: completed ? TextDecoration.lineThrough : TextDecoration.none,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1410,6 +1532,7 @@ class _EventCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                ),
               ),
             ),
           ),
