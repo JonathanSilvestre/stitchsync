@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'create_family_screen.dart';
 import '../services/family_service.dart';
+import '../services/event_service.dart';
 
 class FamilyTabContent extends StatefulWidget {
   const FamilyTabContent({super.key});
@@ -15,6 +16,7 @@ class FamilyTabContent extends StatefulWidget {
 
 class _FamilyTabContentState extends State<FamilyTabContent> {
   final FamilyService _familyService = FamilyService();
+  final EventService _eventService = EventService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   static const Color _bg = Color(0xFF060E20);
@@ -366,6 +368,201 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     final left = shortPrefix.substring(0, shortPrefix.length.clamp(0, 6));
     final right = familyId.substring(0, 3).toUpperCase();
     return '$left-$right';
+  }
+
+  bool _isFeedingEvent(Map<String, dynamic> data) {
+    final title = ((data['title'] as String?) ?? '').toLowerCase();
+    final category = ((data['category'] as String?) ?? '').toLowerCase();
+    final lookup = '$title $category';
+
+    return lookup.contains('feed') ||
+        lookup.contains('food') ||
+        lookup.contains('meal') ||
+        lookup.contains('comida') ||
+        lookup.contains('aliment');
+  }
+
+  String _formatShortTime(DateTime dateTime) {
+    final hour = dateTime.hour;
+    final minute = dateTime.minute;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final normalizedHour = hour % 12 == 0 ? 12 : hour % 12;
+    final paddedMinute = minute.toString().padLeft(2, '0');
+    return '$normalizedHour:$paddedMinute $suffix';
+  }
+
+  Widget _buildPetHealthPulse({
+    required String familyId,
+  }) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (currentUid == null) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('users').doc(currentUid).snapshots(),
+      builder: (context, userSnapshot) {
+        final userData = userSnapshot.data?.data() ?? const <String, dynamic>{};
+        final activeFamilyId = ((userData['active_family_id'] as String?) ?? '').trim();
+        final activePetId = ((userData['active_pet_id'] as String?) ?? '').trim();
+        final selectedPetId = activeFamilyId == familyId ? activePetId : '';
+
+        return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: _firestore
+              .collection('families')
+              .doc(familyId)
+              .collection('pets')
+              .orderBy('created_at', descending: true)
+              .snapshots()
+              .map((snapshot) => snapshot.docs),
+          builder: (context, petsSnapshot) {
+            final pets = petsSnapshot.data ?? const [];
+
+            String petName = 'tu mascota';
+            String petIdForLookup = selectedPetId;
+
+            if (pets.isNotEmpty) {
+              QueryDocumentSnapshot<Map<String, dynamic>> petDoc = pets.first;
+              if (selectedPetId.isNotEmpty) {
+                try {
+                  petDoc = pets.firstWhere((doc) => doc.id == selectedPetId);
+                } catch (_) {
+                  petDoc = pets.first;
+                }
+              }
+
+              final petData = petDoc.data();
+              final resolvedName = (petData['name'] as String?)?.trim();
+              petName = (resolvedName != null && resolvedName.isNotEmpty) ? resolvedName : 'tu mascota';
+              petIdForLookup = petDoc.id;
+            }
+
+            if (petIdForLookup.isEmpty) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F3A35),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
+                        SizedBox(width: 8),
+                        Text(
+                          'PET HEALTH PULSE',
+                          style: TextStyle(
+                            color: Color(0xFF9FD6BD),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'No hay mascota activa para mostrar historial de comida.',
+                      style: TextStyle(
+                        color: Color(0xFFC9E9D9),
+                        fontSize: 16,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+              stream: _eventService.streamTodayEvents(
+                familyId: familyId,
+                petId: petIdForLookup,
+              ),
+              builder: (context, eventsSnapshot) {
+                final events = eventsSnapshot.data ?? const [];
+
+                QueryDocumentSnapshot<Map<String, dynamic>>? latestFeedingCompleted;
+                DateTime? latestCompletedAt;
+
+                for (final eventDoc in events) {
+                  final data = eventDoc.data();
+                  if (data['completed'] != true || !_isFeedingEvent(data)) {
+                    continue;
+                  }
+
+                  final completedAt = data['completed_at'];
+                  if (completedAt is! Timestamp) {
+                    continue;
+                  }
+
+                  final completedDate = completedAt.toDate();
+                  if (latestCompletedAt == null || completedDate.isAfter(latestCompletedAt)) {
+                    latestCompletedAt = completedDate;
+                    latestFeedingCompleted = eventDoc;
+                  }
+                }
+
+                String pulseMessage;
+                if (latestFeedingCompleted == null || latestCompletedAt == null) {
+                  pulseMessage = 'No hay eventos de comida completados hoy para $petName.';
+                } else {
+                  final feedingData = latestFeedingCompleted.data();
+                  final completedBy = ((feedingData['completed_by_username'] as String?) ?? '').trim();
+                  final completedByLabel = completedBy.isNotEmpty ? completedBy : 'alguien de la familia';
+                  final timeLabel = _formatShortTime(latestCompletedAt);
+                  pulseMessage = '$petName was last fed by $completedByLabel at $timeLabel.';
+                }
+
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1F3A35),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
+                          SizedBox(width: 8),
+                          Text(
+                            'PET HEALTH PULSE',
+                            style: TextStyle(
+                              color: Color(0xFF9FD6BD),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        pulseMessage,
+                        style: const TextStyle(
+                          color: Color(0xFFC9E9D9),
+                          fontSize: 16,
+                          height: 1.45,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -828,44 +1025,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                       ],
                       const SizedBox(height: 18),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1F3A35),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
-                                SizedBox(width: 8),
-                                Text(
-                                  'PET HEALTH PULSE',
-                                  style: TextStyle(
-                                    color: Color(0xFF9FD6BD),
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 12),
-                            Text(
-                              'Everyone is synchronized. Fido was last fed by Sarah at 8:00 AM.',
-                              style: TextStyle(
-                                color: Color(0xFFC9E9D9),
-                                fontSize: 16,
-                                height: 1.45,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      if (hasFamily && family != null)
+                        _buildPetHealthPulse(familyId: family.id),
                     ],
                   ),
                 ),

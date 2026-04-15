@@ -75,7 +75,6 @@ class AuthService {
 
       await result.user?.sendEmailVerification();
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
-      await _familyService.syncCurrentUserFamilyIds();
       await _auth.signOut();
       return result.user;
     } on FirebaseAuthException {
@@ -122,7 +121,6 @@ class AuthService {
       }
 
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
-      await _familyService.syncCurrentUserFamilyIds();
       return refreshedUser;
     } on FirebaseAuthException {
       rethrow;
