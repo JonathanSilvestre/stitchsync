@@ -325,7 +325,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo eliminar el evento.')),
+        const SnackBar(content: Text('Could not delete event.')),
       );
     }
   }
@@ -351,7 +351,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo eliminar la serie.')),
+        const SnackBar(content: Text('Could not delete series.')),
       );
     }
   }
@@ -378,7 +378,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo actualizar el estado del evento.')),
+        const SnackBar(content: Text('Could not update event status.')),
       );
     }
   }

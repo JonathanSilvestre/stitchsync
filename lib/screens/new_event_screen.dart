@@ -268,7 +268,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
           _isSaving = false;
         });
         messenger.showSnackBar(
-          const SnackBar(content: Text('En repeticion personalizada, ingresa un numero mayor a 0.')),
+          const SnackBar(content: Text('For custom recurrence, enter a number greater than 0.')),
         );
         return;
       }
@@ -305,7 +305,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            _isEditing ? 'Cambios guardados correctamente.' : 'Evento guardado correctamente.',
+            _isEditing ? 'Changes saved successfully.' : 'Event saved successfully.',
           ),
         ),
       );
@@ -320,7 +320,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
-              'No tienes permisos para escribir eventos en esta familia. Verifica reglas de Firestore y membresia.',
+              'You do not have permission to write events in this family. Check Firestore rules and membership.',
             ),
           ),
         );
@@ -328,7 +328,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       }
 
       messenger.showSnackBar(
-        SnackBar(content: Text('No se pudo guardar el evento: ${e.message ?? e.code}')),
+        SnackBar(content: Text('Could not save event: ${e.message ?? e.code}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -336,7 +336,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
         _isSaving = false;
       });
       messenger.showSnackBar(
-        SnackBar(content: Text('No se pudo guardar el evento: $e')),
+        SnackBar(content: Text('Could not save event: $e')),
       );
     }
   }

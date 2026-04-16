@@ -116,7 +116,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo completar el registro')),
+          const SnackBar(content: Text('Could not complete sign up.')),
       );
     } finally {
       if (mounted) {

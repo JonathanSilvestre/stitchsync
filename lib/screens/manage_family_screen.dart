@@ -23,6 +23,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   static const Color _textMain = Color(0xFFDEE5FF);
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
+  static const Color _errorRed = Color(0xFFD32F2F);
 
   @override
   void dispose() {
@@ -51,6 +52,22 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
 
     final family = families.first;
     final familyName = (family.data()['name'] as String?) ?? 'My Family';
+    final familyData = family.data();
+    final ownerUid = (familyData['owner_uid'] as String?) ?? '';
+    final adminUids = (familyData['admin_uids'] as List<dynamic>? ?? const [])
+        .map((adminUid) => adminUid.toString())
+        .toSet();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final canInvite = currentUid.isNotEmpty &&
+        (currentUid == ownerUid || adminUids.contains(currentUid));
+
+    if (!canInvite) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Solo owner/admin puede invitar miembros.')),
+      );
+      return;
+    }
 
     try {
       await _familyService.inviteByEmail(
@@ -76,7 +93,9 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   }
 
   Future<List<_MemberData>> _loadMembers(
-      List<dynamic> memberUids, String ownerUid) async {
+      List<dynamic> memberUids, String ownerUid, List<dynamic> adminUids) async {
+    final adminSet = adminUids.map((e) => e.toString()).toSet();
+    
     final docs = await Future.wait(
       memberUids.map(
         (uid) => _firestore.collection('users').doc(uid as String).get(),
@@ -86,13 +105,79 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
     return docs.map((doc) {
       final data = doc.data() ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
+      final isOwner = doc.id == ownerUid;
+      final isAdmin = isOwner || adminSet.contains(doc.id);
+      
       return _MemberData(
         uid: doc.id,
         name: (username != null && username.isNotEmpty) ? username : 'Member',
-        subtitle: doc.id == ownerUid ? 'ADMIN' : 'CARETAKER',
-        isAdmin: doc.id == ownerUid,
+        subtitle: isOwner
+            ? 'Family Owner'
+            : isAdmin
+                ? 'Family Administrator'
+                : 'Member',
+        isAdmin: isAdmin,
       );
     }).toList();
+  }
+
+  Future<void> _deleteFamilyFlow({
+    required String familyId,
+  }) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surface,
+        title: const Text(
+          'Delete Family',
+          style: TextStyle(color: _textMain, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'This action will permanently delete the family and its pets. Continue?',
+          style: TextStyle(color: _textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: _errorRed),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true) {
+      return;
+    }
+
+    try {
+      await _familyService.deleteFamily(familyId);
+
+      if (!mounted) {
+        return;
+      }
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Family deleted successfully.')),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo eliminar la familia: $e')),
+      );
+    }
   }
 
   @override
@@ -264,6 +349,12 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                 (data['member_uids'] as List<dynamic>?) ?? [];
                             final ownerUid =
                                 (data['owner_uid'] as String?) ?? '';
+                            final adminUids =
+                                (data['admin_uids'] as List<dynamic>?) ?? [];
+                            final currentUid =
+                              FirebaseAuth.instance.currentUser?.uid ?? '';
+                            final canDeleteFamily =
+                              currentUid.isNotEmpty && ownerUid == currentUid;
 
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -294,7 +385,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                 const SizedBox(height: 12),
                                 FutureBuilder<List<_MemberData>>(
                                   future:
-                                      _loadMembers(memberUids, ownerUid),
+                                      _loadMembers(memberUids, ownerUid, adminUids),
                                   builder: (context, membersSnapshot) {
                                     if (membersSnapshot.connectionState ==
                                         ConnectionState.waiting) {
@@ -389,6 +480,29 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                     );
                                   },
                                 ),
+                                if (canDeleteFamily) ...[
+                                  const SizedBox(height: 14),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _deleteFamilyFlow(
+                                        familyId: family.id,
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: _errorRed,
+                                        side: BorderSide(
+                                          color: _errorRed.withValues(alpha: 0.65),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                      ),
+                                      icon: const Icon(Icons.delete_outline),
+                                      label: const Text(
+                                        'Delete Family',
+                                        style: TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             );
                           },

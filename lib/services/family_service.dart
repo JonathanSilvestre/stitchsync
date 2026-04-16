@@ -57,6 +57,41 @@ class FamilyService {
         .map((snapshot) => snapshot.docs);
   }
 
+  Future<Map<String, dynamic>> _loadFamilyDataOrThrow(String familyId) async {
+    final familySnap = await _families.doc(familyId).get();
+    if (!familySnap.exists) {
+      throw FirebaseAuthException(
+        code: 'family-not-found',
+        message: 'La familia no existe o fue eliminada.',
+      );
+    }
+
+    return familySnap.data() ?? <String, dynamic>{};
+  }
+
+  Future<bool> isCurrentUserFamilyAdmin({required String familyId}) async {
+    final uid = currentUid;
+    if (uid == null) {
+      return false;
+    }
+
+    final familyData = await _loadFamilyDataOrThrow(familyId);
+    final ownerUid = (familyData['owner_uid'] as String?)?.trim() ?? '';
+    final adminUids = _deriveAdminUids(familyData);
+    return uid == ownerUid || adminUids.contains(uid);
+  }
+
+  Future<bool> isCurrentUserFamilyOwner({required String familyId}) async {
+    final uid = currentUid;
+    if (uid == null) {
+      return false;
+    }
+
+    final familyData = await _loadFamilyDataOrThrow(familyId);
+    final ownerUid = (familyData['owner_uid'] as String?)?.trim() ?? '';
+    return uid == ownerUid;
+  }
+
   Future<String> createFamily(String familyName) async {
     final uid = currentUid;
 
@@ -296,22 +331,64 @@ class FamilyService {
         await doc.reference.delete();
       }
     }
+
+    await _clearActiveSelectionForFamilyIfNeeded(familyId: familyId, userIds: [uid]);
   }
 
   Future<void> deleteFamily(String familyId) async {
+    final uid = currentUid;
+    if (uid == null) {
+      throw FirebaseAuthException(code: 'user-not-found');
+    }
+
     final familyRef = _families.doc(familyId);
+    final familySnap = await familyRef.get();
+    if (!familySnap.exists) {
+      throw FirebaseAuthException(code: 'family-not-found');
+    }
+
+    final familyData = familySnap.data() ?? <String, dynamic>{};
+    final ownerUid = (familyData['owner_uid'] as String?)?.trim() ?? '';
+    if (ownerUid != uid) {
+      throw FirebaseAuthException(
+        code: 'owner-only-action',
+        message: 'Solo el creador de la familia puede eliminarla.',
+      );
+    }
+
+    final memberUids = (familyData['member_uids'] as List<dynamic>? ?? const <dynamic>[])
+        .map((memberUid) => memberUid.toString())
+        .where((memberUid) => memberUid.trim().isNotEmpty)
+        .toList(growable: false);
+
     final pets = await familyRef.collection('pets').get();
+    final events = await familyRef.collection('events').get();
 
     for (final petDoc in pets.docs) {
       await petDoc.reference.delete();
     }
 
-    await familyRef.delete();
+    for (final eventDoc in events.docs) {
+      await eventDoc.reference.delete();
+    }
 
+    for (final memberUid in memberUids) {
+      await _firestore.collection('users').doc(memberUid).set({
+        'family_ids': FieldValue.arrayRemove([familyId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    await _clearActiveSelectionForFamilyIfNeeded(
+      familyId: familyId,
+      userIds: memberUids,
+    );
     final invitations = await _invitations.where('family_id', isEqualTo: familyId).get();
     for (final doc in invitations.docs) {
       await doc.reference.delete();
     }
+
+    await familyRef.delete();
   }
 
   Future<void> inviteByEmail({
@@ -323,6 +400,14 @@ class FamilyService {
 
     if (uid == null) {
       throw FirebaseAuthException(code: 'user-not-found');
+    }
+
+    final canManage = await isCurrentUserFamilyAdmin(familyId: familyId);
+    if (!canManage) {
+      throw FirebaseAuthException(
+        code: 'not-family-admin',
+        message: 'Solo owner/admin puede invitar miembros.',
+      );
     }
 
     final normalizedEmail = email.trim().toLowerCase();
@@ -349,6 +434,96 @@ class FamilyService {
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> removeMemberFromFamily({
+    required String familyId,
+    required String memberUid,
+  }) async {
+    final uid = currentUid;
+    if (uid == null) {
+      throw FirebaseAuthException(code: 'user-not-found');
+    }
+
+    final familyRef = _families.doc(familyId);
+    final memberRef = _firestore.collection('users').doc(memberUid);
+
+    await _firestore.runTransaction((tx) async {
+      final familySnap = await tx.get(familyRef);
+      if (!familySnap.exists) {
+        throw FirebaseAuthException(code: 'family-not-found');
+      }
+
+      final familyData = familySnap.data()!;
+      final ownerUid = (familyData['owner_uid'] as String?)?.trim() ?? '';
+      final memberUids =
+          (familyData['member_uids'] as List<dynamic>? ?? const <dynamic>[])
+              .map((id) => id.toString())
+              .toList(growable: false);
+      final adminUids = _deriveAdminUids(familyData);
+
+      if (!adminUids.contains(uid)) {
+        throw FirebaseAuthException(
+          code: 'not-family-admin',
+          message: 'Solo owner/admin puede eliminar miembros.',
+        );
+      }
+
+      if (!memberUids.contains(memberUid)) {
+        throw FirebaseAuthException(
+          code: 'member-not-found',
+          message: 'Ese usuario no pertenece a esta familia.',
+        );
+      }
+
+      if (memberUid == ownerUid) {
+        throw FirebaseAuthException(
+          code: 'owner-only-action',
+          message: 'No puedes eliminar al owner de la familia.',
+        );
+      }
+
+      tx.update(familyRef, {
+        'member_uids': FieldValue.arrayRemove([memberUid]),
+        'admin_uids': FieldValue.arrayRemove([memberUid]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      tx.set(memberRef, {
+        'family_ids': FieldValue.arrayRemove([familyId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+
+    await _clearActiveSelectionForFamilyIfNeeded(
+      familyId: familyId,
+      userIds: [memberUid],
+    );
+  }
+
+  Future<void> _clearActiveSelectionForFamilyIfNeeded({
+    required String familyId,
+    required List<String> userIds,
+  }) async {
+    for (final userId in userIds) {
+      final userRef = _firestore.collection('users').doc(userId);
+      final userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        continue;
+      }
+
+      final userData = userSnap.data() ?? <String, dynamic>{};
+      final activeFamilyId = (userData['active_family_id'] as String?)?.trim() ?? '';
+      if (activeFamilyId != familyId) {
+        continue;
+      }
+
+      await userRef.set({
+        'active_family_id': null,
+        'active_pet_id': null,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamPendingInvitationsForCurrentUser() {
@@ -446,6 +621,8 @@ class FamilyService {
         return 'Ya perteneces a esa familia.';
       case 'not-family-admin':
         return 'Solo un administrador puede hacer ese cambio.';
+      case 'owner-only-action':
+        return 'Solo el owner puede realizar esta accion.';
       case 'member-not-found':
         return 'Ese miembro no pertenece a la familia.';
       case 'not-family-member':

@@ -121,6 +121,7 @@ class AuthService {
       }
 
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
+      await setPresence(isOnline: true);
       return refreshedUser;
     } on FirebaseAuthException {
       rethrow;
@@ -131,7 +132,22 @@ class AuthService {
 
   // Logout
   Future<void> logout() async {
+    await setPresence(isOnline: false);
     await _auth.signOut();
+  }
+
+  Future<void> setPresence({required bool isOnline}) async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    await _usersCollection.doc(user.uid).set({
+      'is_online': isOnline,
+      'last_seen_at': FieldValue.serverTimestamp(),
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> sendVerificationEmail() async {

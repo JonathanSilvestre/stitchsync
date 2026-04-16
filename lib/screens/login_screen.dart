@@ -55,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo iniciar sesión')),
+          const SnackBar(content: Text('Could not sign in.')),
         );
       }
     } on FirebaseAuthException catch (e) {

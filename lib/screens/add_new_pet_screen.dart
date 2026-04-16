@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/pet_service.dart';
+import '../utils/pet_avatar_catalog.dart';
 import 'home_screen.dart';
 
 class AddNewPetScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   bool _isKg = true;
   bool _isSaving = false;
   DateTime? _birthDate;
+  String _selectedAvatarId = kPetAvatarChoices.first.id;
 
   @override
   void dispose() {
@@ -73,6 +75,101 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
     return age;
   }
 
+  Future<void> _openAvatarPicker() async {
+    if (_isSaving) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surfaceHigh,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const Text(
+                  'Choose Avatar',
+                  style: TextStyle(
+                    color: _textMain,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: kPetAvatarChoices.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final avatar = kPetAvatarChoices[index];
+                    final selectedAvatar = avatar.id == _selectedAvatarId;
+
+                    return InkWell(
+                      onTap: () => Navigator.pop(sheetContext, avatar.id),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: selectedAvatar ? _primary : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: Center(
+                          child: buildPetAvatarVisual(
+                            photoUrl: null,
+                            avatarId: avatar.id,
+                            size: 56,
+                            borderRadius: BorderRadius.circular(14),
+                            iconSize: 30,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedAvatarId = selected;
+    });
+  }
+
   String _composeNotes() {
     final pieces = <String>[];
     final weight = _weightController.text.trim();
@@ -103,7 +200,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
     if (name.isEmpty || breed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa nombre y raza de la mascota')),
+        const SnackBar(content: Text('Please enter pet name and breed.')),
       );
       return;
     }
@@ -119,6 +216,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
         breed: breed,
         age: _resolveAgeFromBirthDate(),
         notes: _composeNotes(),
+        avatarId: _selectedAvatarId,
       );
 
       if (!mounted) {
@@ -126,7 +224,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mascota agregada correctamente')),
+        const SnackBar(content: Text('Pet added successfully.')),
       );
 
       Navigator.of(context).pushAndRemoveUntil(
@@ -134,6 +232,13 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
           builder: (_) => const HomeScreen(initialTab: 2),
         ),
         (route) => false,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save pet. Please try again.')),
       );
     } finally {
       if (mounted) {
@@ -228,55 +333,57 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                     child: Column(
                       children: [
                         Center(
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                width: 180,
-                                height: 180,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(30),
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [Color(0xFF2D3A52), Color(0xFF192540)],
-                                  ),
-                                ),
-                                child: const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_a_photo_outlined,
-                                      color: Color(0xFFAFBED9),
-                                      size: 44,
-                                    ),
-                                    SizedBox(height: 6),
-                                    Text(
-                                      'UPLOAD PHOTO',
-                                      style: TextStyle(
-                                        color: Color(0xFFAFBED9),
-                                        fontSize: 18,
-                                        letterSpacing: 1.2,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Positioned(
-                                right: -8,
-                                bottom: -8,
-                                child: Container(
-                                  width: 62,
-                                  height: 62,
+                          child: InkWell(
+                            onTap: _openAvatarPicker,
+                            borderRadius: BorderRadius.circular(30),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 180,
+                                  height: 180,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF2D66D8),
-                                    borderRadius: BorderRadius.circular(18),
+                                    borderRadius: BorderRadius.circular(30),
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [Color(0xFF2D3A52), Color(0xFF192540)],
+                                    ),
                                   ),
-                                  child: const Icon(Icons.edit, color: Colors.white),
+                                  child: Center(
+                                    child: buildPetAvatarVisual(
+                                      photoUrl: null,
+                                      avatarId: _selectedAvatarId,
+                                      size: 120,
+                                      borderRadius: BorderRadius.circular(26),
+                                      iconSize: 64,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Positioned(
+                                  right: -8,
+                                  bottom: -8,
+                                  child: Container(
+                                    width: 62,
+                                    height: 62,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2D66D8),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: const Icon(Icons.edit, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Avatar: ${resolvePetAvatar(_selectedAvatarId).label}',
+                          style: const TextStyle(
+                            color: _textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 18),

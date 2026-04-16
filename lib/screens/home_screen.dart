@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -5,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
+import '../utils/pet_avatar_catalog.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'new_event_screen.dart';
@@ -31,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedFamilyId;
   String? _selectedPetId;
   bool _profileLoaded = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSelectionSubscription;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -44,6 +48,44 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _currentIndex = widget.initialTab.clamp(0, 3);
     _loadUsername();
+    _startProfileSelectionSync();
+  }
+
+  void _startProfileSelectionSync() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      return;
+    }
+
+    _profileSelectionSubscription?.cancel();
+    _profileSelectionSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((userSnapshot) {
+      final userData = userSnapshot.data();
+      final activeFamilyId = (userData?['active_family_id'] as String?)?.trim();
+      final activePetId = (userData?['active_pet_id'] as String?)?.trim();
+
+      final normalizedFamilyId =
+          (activeFamilyId != null && activeFamilyId.isNotEmpty) ? activeFamilyId : null;
+      final normalizedPetId =
+          (activePetId != null && activePetId.isNotEmpty) ? activePetId : null;
+
+      if (!mounted) {
+        return;
+      }
+
+      if (_selectedFamilyId == normalizedFamilyId && _selectedPetId == normalizedPetId) {
+        return;
+      }
+
+      setState(() {
+        _selectedFamilyId = normalizedFamilyId;
+        _selectedPetId = normalizedPetId;
+        _profileLoaded = true;
+      });
+    });
   }
 
   Future<void> _loadUsername() async {
@@ -79,6 +121,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedPetId = activePetId != null && activePetId.isNotEmpty ? activePetId : null;
       _profileLoaded = true;
     });
+  }
+
+  @override
+  void dispose() {
+    _profileSelectionSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _persistActivePetSelection({
@@ -222,6 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final name = (petData['name'] as String?) ?? 'Pet';
                   final breed = (petData['breed'] as String?) ?? 'Unknown';
                   final photoUrl = (petData['photo_url'] as String?) ?? '';
+                  final avatarId = (petData['avatar_id'] as String?) ?? '';
                   final isSelected = petDoc.id == _selectedPetId;
 
                   return Padding(
@@ -244,12 +293,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 color: _surfaceHigh,
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: photoUrl.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(14),
-                                      child: Image.network(photoUrl, fit: BoxFit.cover),
-                                    )
-                                  : const Icon(Icons.pets, color: _primary),
+                              child: buildPetAvatarVisual(
+                                photoUrl: photoUrl,
+                                avatarId: avatarId,
+                                size: 52,
+                                borderRadius: BorderRadius.circular(14),
+                                iconSize: 24,
+                                placeholderBackground: _surfaceHigh,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -492,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo actualizar el estado del evento.')),
+        const SnackBar(content: Text('Could not update event status.')),
       );
     }
   }
@@ -517,7 +568,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo eliminar el evento.')),
+        const SnackBar(content: Text('Could not delete event.')),
       );
     }
   }
@@ -542,7 +593,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo eliminar la serie.')),
+        const SnackBar(content: Text('Could not delete series.')),
       );
     }
   }
@@ -707,13 +758,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final selectedData = selectedPet?.data() ?? const <String, dynamic>{};
-    final selectedName = (selectedData['name'] as String?)?.trim().isNotEmpty == true
+    final hasPets = pets.isNotEmpty;
+    final selectedName = hasPets
+      ? ((selectedData['name'] as String?)?.trim().isNotEmpty == true
         ? (selectedData['name'] as String).trim()
-        : 'Stitch';
-    final selectedBreed = (selectedData['breed'] as String?)?.trim().isNotEmpty == true
+        : 'Tu mascota')
+      : 'No pets yet';
+    final selectedBreed = hasPets
+      ? ((selectedData['breed'] as String?)?.trim().isNotEmpty == true
         ? (selectedData['breed'] as String).trim()
-        : 'Unknown breed';
-    final selectedPhoto = (selectedData['photo_url'] as String?) ?? '';
+        : 'Unknown breed')
+      : 'Esta familia aún no tiene mascotas';
+    final selectedPhoto = hasPets ? (selectedData['photo_url'] as String?) ?? '' : '';
+    final selectedAvatarId = hasPets ? (selectedData['avatar_id'] as String?) ?? '' : '';
 
     return Stack(
       children: [
@@ -779,6 +836,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         petName: selectedName,
                         breed: selectedBreed,
                         photoUrl: selectedPhoto,
+                        avatarId: selectedAvatarId,
                         familyMemberCount: familyMemberCount,
                         onViewDetails: () => _openPetDetails(
                           petData: selectedData,
@@ -1286,6 +1344,7 @@ class _DogHeroCard extends StatelessWidget {
   final String petName;
   final String breed;
   final String photoUrl;
+  final String avatarId;
   final int familyMemberCount;
   final VoidCallback onViewDetails;
 
@@ -1293,6 +1352,7 @@ class _DogHeroCard extends StatelessWidget {
     required this.petName,
     required this.breed,
     required this.photoUrl,
+    required this.avatarId,
     required this.familyMemberCount,
     required this.onViewDetails,
   });
@@ -1329,23 +1389,14 @@ class _DogHeroCard extends StatelessWidget {
                     ),
                   ),
                   Center(
-                    child: photoUrl.isNotEmpty
-                        ? ClipOval(
-                            child: Image.network(
-                              photoUrl,
-                              width: 140,
-                              height: 140,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : Opacity(
-                            opacity: 0.88,
-                            child: Image.asset(
-                              'assets/icon/StitchSyncIcon.png',
-                              width: 140,
-                              height: 140,
-                            ),
-                          ),
+                    child: buildPetAvatarVisual(
+                      photoUrl: photoUrl,
+                      avatarId: avatarId,
+                      size: 140,
+                      borderRadius: BorderRadius.circular(70),
+                      iconSize: 70,
+                      placeholderBackground: const Color(0xFF2A3550),
+                    ),
                   ),
                   Positioned(
                     left: 16,

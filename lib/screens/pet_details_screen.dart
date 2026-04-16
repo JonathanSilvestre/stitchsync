@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/pet_avatar_catalog.dart';
+
 class PetDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> petData;
   final int familyMemberCount;
@@ -31,6 +33,7 @@ class PetDetailsScreen extends StatelessWidget {
         ? (petData['notes'] as String).trim()
         : 'No additional notes for this companion yet.';
     final photoUrl = (petData['photo_url'] as String?) ?? '';
+    final avatarId = (petData['avatar_id'] as String?) ?? '';
 
     return Scaffold(
       backgroundColor: _bg,
@@ -110,11 +113,14 @@ class PetDetailsScreen extends StatelessWidget {
                                 ? Image.network(photoUrl, fit: BoxFit.cover)
                                 : Container(
                                     color: _surfaceHigh,
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.pets,
-                                        size: 84,
-                                        color: _primary,
+                                    child: Center(
+                                      child: buildPetAvatarVisual(
+                                        photoUrl: null,
+                                        avatarId: avatarId,
+                                        size: 116,
+                                        borderRadius: BorderRadius.circular(20),
+                                        iconSize: 74,
+                                        placeholderBackground: _surfaceHigh,
                                       ),
                                     ),
                                   ),

@@ -211,7 +211,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     required bool canManage,
   }) async {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUid == null || member.uid == currentUid || !canManage || member.isAdmin) {
+    if (currentUid == null || member.uid == currentUid || !canManage || member.isOwner) {
       return;
     }
 
@@ -254,6 +254,20 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                     ),
                   ),
                 ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'remove_member'),
+                    icon: const Icon(Icons.person_remove_outlined, color: Color(0xFFFF9A9A)),
+                    label: const Text(
+                      'Eliminar de la familia',
+                      style: TextStyle(
+                        color: Color(0xFFFFB0B0),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -261,16 +275,38 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       },
     );
 
-    if (action != 'make_admin') return;
+    if (action == 'make_admin') {
+      try {
+        await _familyService.promoteMemberToAdmin(
+          familyId: familyId,
+          memberUid: member.uid,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Miembro promovido a administrador.')),
+        );
+        setState(() {});
+      } on FirebaseAuthException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_familyService.getReadableError(e))),
+        );
+      }
+      return;
+    }
+
+    if (action != 'remove_member') {
+      return;
+    }
 
     try {
-      await _familyService.promoteMemberToAdmin(
+      await _familyService.removeMemberFromFamily(
         familyId: familyId,
         memberUid: member.uid,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Miembro promovido a administrador.')),
+        const SnackBar(content: Text('Miembro eliminado de la familia.')),
       );
       setState(() {});
     } on FirebaseAuthException catch (e) {
@@ -352,11 +388,17 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     return docs.map((doc) {
       final data = doc.data() ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
-      final isAdmin = adminSet.contains(doc.id) || doc.id == ownerUid;
+      final isOwner = doc.id == ownerUid;
+      final isAdmin = isOwner || adminSet.contains(doc.id);
       return _MemberData(
         uid: doc.id,
         name: (username != null && username.isNotEmpty) ? username : 'Member',
-        subtitle: isAdmin ? 'Primary Caretaker' : 'Family Member',
+        subtitle: isOwner
+            ? 'Owner'
+            : isAdmin
+                ? 'Admin'
+                : 'Member',
+        isOwner: isOwner,
         isAdmin: isAdmin,
       );
     }).toList();
@@ -819,21 +861,22 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                 ),
                               ),
                             ),
-                            TextButton(
-                              onPressed: () {
-                                _showInviteDialog(
-                                  familyId: family!.id,
-                                  familyName: familyName,
-                                );
-                              },
-                              child: const Text(
-                                '+ Invite Member',
-                                style: TextStyle(
-                                  color: _primary,
-                                  fontWeight: FontWeight.w700,
+                            if (isCurrentUserAdmin)
+                              TextButton(
+                                onPressed: () {
+                                  _showInviteDialog(
+                                    familyId: family!.id,
+                                    familyName: familyName,
+                                  );
+                                },
+                                child: const Text(
+                                  '+ Invite Member',
+                                  style: TextStyle(
+                                    color: _primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -939,7 +982,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                     ),
                                   ),
                                 ),
-                                InkWell(
+                                if (isCurrentUserAdmin)
+                                  InkWell(
                                   onTap: () {
                                     _showInviteDialog(
                                       familyId: family!.id,
@@ -1043,12 +1087,14 @@ class _MemberData {
   final String uid;
   final String name;
   final String subtitle;
+  final bool isOwner;
   final bool isAdmin;
 
   const _MemberData({
     required this.uid,
     required this.name,
     required this.subtitle,
+    required this.isOwner,
     required this.isAdmin,
   });
 }

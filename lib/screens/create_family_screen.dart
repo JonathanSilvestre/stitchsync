@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../services/family_service.dart';
 import 'add_new_pet_screen.dart';
 
@@ -13,6 +14,7 @@ class CreateFamilyScreen extends StatefulWidget {
 
 class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
   final FamilyService _familyService = FamilyService();
+  final AuthService _authService = AuthService();
   final TextEditingController _familyNameController = TextEditingController();
 
   static const Color _bg = Color(0xFF060E20);
@@ -45,6 +47,16 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
 
     try {
       final familyId = await _familyService.createFamily(familyName);
+
+      if (!mounted) {
+        return;
+      }
+
+      // Set the new family as active and clear previous pet selection
+      await _authService.saveActivePetSelection(
+        familyId: familyId,
+        petId: '', // Clear the pet ID to show "No pets yet"
+      );
 
       if (!mounted) {
         return;
@@ -217,67 +229,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Center(
-                                child: SizedBox(
-                                  width: 214,
-                                  height: 214,
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Container(
-                                        width: 200,
-                                        height: 200,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: const Color(0xFF42506C),
-                                            width: 5,
-                                            strokeAlign: BorderSide.strokeAlignOutside,
-                                          ),
-                                        ),
-                                      ),
-                                      Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: const [
-                                          Icon(Icons.photo_camera_outlined,
-                                              color: Color(0xFF95A2BC), size: 52),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            'UPLOAD',
-                                            style: TextStyle(
-                                              color: Color(0xFF95A2BC),
-                                              fontSize: 30,
-                                              letterSpacing: 2,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Positioned(
-                                        right: 18,
-                                        bottom: 26,
-                                        child: Container(
-                                          width: 60,
-                                          height: 60,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: const Color(0xFF2D66D8),
-                                            boxShadow: const [
-                                              BoxShadow(
-                                                color: Color.fromRGBO(45, 102, 216, 0.35),
-                                                blurRadius: 16,
-                                                offset: Offset(0, 8),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Icon(Icons.add, color: Colors.white, size: 36),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 22),
+                              const SizedBox(height: 8),
                               const Text(
                                 'FAMILY NAME',
                                 style: TextStyle(
