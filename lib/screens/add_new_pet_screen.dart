@@ -6,8 +6,15 @@ import 'home_screen.dart';
 
 class AddNewPetScreen extends StatefulWidget {
   final String familyId;
+  final String? petId;
+  final Map<String, dynamic>? initialPetData;
 
-  const AddNewPetScreen({super.key, required this.familyId});
+  const AddNewPetScreen({
+    super.key,
+    required this.familyId,
+    this.petId,
+    this.initialPetData,
+  });
 
   @override
   State<AddNewPetScreen> createState() => _AddNewPetScreenState();
@@ -31,6 +38,82 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   bool _isSaving = false;
   DateTime? _birthDate;
   String _selectedAvatarId = kPetAvatarChoices.first.id;
+
+  bool get _isEditMode => widget.petId != null && widget.petId!.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrateFromInitialPetData();
+  }
+
+  void _hydrateFromInitialPetData() {
+    final data = widget.initialPetData;
+    if (data == null) {
+      return;
+    }
+
+    _nameController.text = (data['name'] as String?) ?? '';
+    _breedController.text = (data['breed'] as String?) ?? '';
+
+    final avatarId = (data['avatar_id'] as String?)?.trim() ?? '';
+    if (avatarId.isNotEmpty) {
+      _selectedAvatarId = avatarId;
+    }
+
+    final notesRaw = ((data['notes'] as String?) ?? '').trim();
+    if (notesRaw.isEmpty) {
+      return;
+    }
+
+    final pieces = notesRaw
+        .split('|')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    for (final piece in pieces) {
+      final lower = piece.toLowerCase();
+
+      if (lower.startsWith('weight:')) {
+        final raw = piece.substring(piece.indexOf(':') + 1).trim();
+        final weightMatch = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(raw);
+        if (weightMatch != null) {
+          _weightController.text = weightMatch.group(1)!;
+        }
+        _isKg = !raw.toLowerCase().contains('lb');
+        continue;
+      }
+
+      if (lower.startsWith('gender:')) {
+        final value = piece.substring(piece.indexOf(':') + 1).trim().toLowerCase();
+        _isMale = value != 'female';
+        continue;
+      }
+
+      if (lower.startsWith('dob:')) {
+        final value = piece.substring(piece.indexOf(':') + 1).trim();
+        final match = RegExp(r'^(\d{1,2})\/(\d{1,2})\/(\d{4})$').firstMatch(value);
+        if (match != null) {
+          final month = int.tryParse(match.group(1)!);
+          final day = int.tryParse(match.group(2)!);
+          final year = int.tryParse(match.group(3)!);
+          if (month != null && day != null && year != null) {
+            _birthDate = DateTime(year, month, day);
+          }
+        }
+        continue;
+      }
+
+      if (lower.startsWith('notes:')) {
+        _notesController.text = piece.substring(piece.indexOf(':') + 1).trim();
+      }
+    }
+
+    if (_notesController.text.isEmpty && !notesRaw.contains('|')) {
+      _notesController.text = notesRaw;
+    }
+  }
 
   @override
   void dispose() {
@@ -210,29 +293,49 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
     });
 
     try {
-      await _petService.addPet(
-        familyId: widget.familyId,
-        name: name,
-        breed: breed,
-        age: _resolveAgeFromBirthDate(),
-        notes: _composeNotes(),
-        avatarId: _selectedAvatarId,
-      );
+      if (_isEditMode) {
+        await _petService.updatePet(
+          familyId: widget.familyId,
+          petId: widget.petId!,
+          name: name,
+          breed: breed,
+          age: _resolveAgeFromBirthDate(),
+          notes: _composeNotes(),
+          avatarId: _selectedAvatarId,
+        );
+      } else {
+        await _petService.addPet(
+          familyId: widget.familyId,
+          name: name,
+          breed: breed,
+          age: _resolveAgeFromBirthDate(),
+          notes: _composeNotes(),
+          avatarId: _selectedAvatarId,
+        );
+      }
 
       if (!mounted) {
         return;
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pet added successfully.')),
+        SnackBar(
+          content: Text(
+            _isEditMode ? 'Pet updated successfully.' : 'Pet added successfully.',
+          ),
+        ),
       );
 
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const HomeScreen(initialTab: 2),
-        ),
-        (route) => false,
-      );
+      if (_isEditMode) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => const HomeScreen(initialTab: 2),
+          ),
+          (route) => false,
+        );
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -302,9 +405,9 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         icon: const Icon(Icons.arrow_back, color: _textMuted),
                       ),
                       const SizedBox(width: 4),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'AddNewPet',
+                          _isEditMode ? 'Edit Pet' : 'AddNewPet',
                           style: TextStyle(
                             color: Color(0xFF9DC7FF),
                             fontSize: 34,
@@ -581,7 +684,9 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                   )
                                 : const Icon(Icons.pets),
                             label: Text(
-                              _isSaving ? 'Saving...' : 'Add Pet',
+                              _isSaving
+                                  ? 'Saving...'
+                                  : (_isEditMode ? 'Update Pet' : 'Add Pet'),
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,

@@ -68,7 +68,11 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
   }) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AddNewPetScreen(familyId: familyId),
+        builder: (_) => AddNewPetScreen(
+          familyId: familyId,
+          petId: petId,
+          initialPetData: petData,
+        ),
       ),
     );
   }

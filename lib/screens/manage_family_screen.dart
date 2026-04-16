@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/family_service.dart';
 import 'manage_pets_screen.dart';
@@ -15,7 +16,6 @@ class ManageFamilyScreen extends StatefulWidget {
 class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   final FamilyService _familyService = FamilyService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final TextEditingController _emailController = TextEditingController();
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -25,71 +25,23 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   static const Color _primary = Color(0xFF74B1FF);
   static const Color _errorRed = Color(0xFFD32F2F);
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
+  String _buildInviteCode(String familyName, String familyId) {
+    final prefix = familyName.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    final shortPrefix = prefix.isEmpty ? 'STITCH' : prefix;
+    final left = shortPrefix.substring(0, shortPrefix.length.clamp(0, 6));
+    final right = familyId.substring(0, 3).toUpperCase();
+    return '$left-$right';
   }
 
-  Future<void> _sendInvite() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final email = _emailController.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email')),
-      );
+  Future<void> _copyInviteCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) {
       return;
     }
 
-    final families = await _familyService.streamFamiliesForCurrentUser().first;
-    if (families.isEmpty) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('No family found')),
-      );
-      return;
-    }
-
-    final family = families.first;
-    final familyName = (family.data()['name'] as String?) ?? 'My Family';
-    final familyData = family.data();
-    final ownerUid = (familyData['owner_uid'] as String?) ?? '';
-    final adminUids = (familyData['admin_uids'] as List<dynamic>? ?? const [])
-        .map((adminUid) => adminUid.toString())
-        .toSet();
-    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final canInvite = currentUid.isNotEmpty &&
-        (currentUid == ownerUid || adminUids.contains(currentUid));
-
-    if (!canInvite) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Solo owner/admin puede invitar miembros.')),
-      );
-      return;
-    }
-
-    try {
-      await _familyService.inviteByEmail(
-        familyId: family.id,
-        familyName: familyName,
-        email: email,
-      );
-
-      if (!mounted) return;
-
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Invite sent successfully')),
-      );
-
-      _emailController.clear();
-    } catch (e) {
-      if (!mounted) return;
-
-      messenger.showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Invitation code copied.')),
+    );
   }
 
   Future<List<_MemberData>> _loadMembers(
@@ -263,7 +215,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Invite caretakers or family members to help manage Fido\'s daily routine.',
+                                'Share this family code so others can join your pack.',
                                 style: TextStyle(
                                   color: _textMuted,
                                   fontSize: 16,
@@ -271,57 +223,77 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: _surface,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: TextField(
-                                  controller: _emailController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  style: const TextStyle(color: _textMain),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Email address',
-                                    hintStyle: TextStyle(
-                                        color: Color(0xFF4D5F82), fontSize: 16),
-                                    border: InputBorder.none,
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 18, vertical: 16),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Color(0xFF2D66D8),
-                                      Color(0xFF1E4A9E)
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                                child: ElevatedButton(
-                                  onPressed: _sendInvite,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.transparent,
-                                    foregroundColor: Colors.white,
-                                    shadowColor: Colors.transparent,
-                                    minimumSize: const Size.fromHeight(56),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(24),
+                              StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                                stream: _familyService.streamFamiliesForCurrentUser(),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: CircularProgressIndicator());
+                                  }
+
+                                  final families = snapshot.data ?? const [];
+                                  if (families.isEmpty) {
+                                    return Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                                      decoration: BoxDecoration(
+                                        color: _surface,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Text(
+                                        'No family found.',
+                                        style: TextStyle(color: _textMuted, fontSize: 16),
+                                      ),
+                                    );
+                                  }
+
+                                  final family = families.first;
+                                  final familyData = family.data();
+                                  final familyName = (familyData['name'] as String?) ?? 'My Family';
+                                  final storedCode = (familyData['invite_code'] as String?)?.trim() ?? '';
+                                  final inviteCode = storedCode.isNotEmpty
+                                      ? storedCode
+                                      : _buildInviteCode(familyName, family.id);
+
+                                  return Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: _surface,
+                                      borderRadius: BorderRadius.circular(20),
                                     ),
-                                  ),
-                                  child: const Text(
-                                    'Send Invite',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 14,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _surfaceHigh,
+                                              borderRadius: BorderRadius.circular(14),
+                                            ),
+                                            child: Text(
+                                              inviteCode,
+                                              style: const TextStyle(
+                                                color: _textMain,
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.8,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        IconButton(
+                                          onPressed: () => _copyInviteCode(inviteCode),
+                                          icon: const Icon(Icons.copy_rounded, color: _primary),
+                                          tooltip: 'Copy code',
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               ),
                             ],
                           ),

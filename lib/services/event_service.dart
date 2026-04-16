@@ -7,7 +7,9 @@ class EventService {
 
   Future<String?> _resolveCurrentUsername() async {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) return null;
+    if (uid == null) {
+      return null;
+    }
 
     final userDoc = await _firestore.collection('users').doc(uid).get();
     final username = (userDoc.data()?['username'] as String?)?.trim();
@@ -176,9 +178,7 @@ class EventService {
       'category': category,
       'scheduled_at': Timestamp.fromDate(scheduledAt),
       'recurrence': recurrence,
-      // ignore: use_null_aware_elements
-      if (recurrenceIntervalDays != null)
-        'recurrence_interval_days': recurrenceIntervalDays,
+      'recurrence_interval_days': recurrenceIntervalDays,
       'completed': false,
       'recurrence_anchor_at': Timestamp.fromDate(anchorDate),
       'series_id': seriesId,
@@ -190,7 +190,7 @@ class EventService {
 
   Future<void> addEvent({
     required String familyId,
-    required String petId,
+    String? petId,
     required String title,
     required DateTime scheduledAt,
     String note = '',
@@ -212,18 +212,17 @@ class EventService {
     }
 
     final cleanFamilyId = familyId.trim();
-    final cleanPetId = petId.trim();
+    final cleanPetId = (petId ?? '').trim();
     if (cleanFamilyId.isEmpty) {
-      throw ArgumentError('FamilyId requerido');
+      throw ArgumentError('familyId requerido');
     }
     if (cleanPetId.isEmpty) {
-      throw ArgumentError('PetId requerido');
+      throw ArgumentError('petId requerido');
     }
 
     final cleanTitle = title.trim();
     final cleanNote = note.trim();
     final cleanCategory = category.trim();
-
     final rangeStart = DateTime(DateTime.now().year, DateTime.now().month - 6, 1);
     final rangeEnd = DateTime(DateTime.now().year, DateTime.now().month + 13, 0, 23, 59);
 
@@ -236,16 +235,10 @@ class EventService {
     );
 
     final seriesId = _eventsCollection(cleanFamilyId).doc().id;
-    final chunks = <List<DateTime>>[];
-    // Keep batches small to stay compatible with strict Firestore rule-evaluation limits.
     for (var i = 0; i < occurrences.length; i += 10) {
       final end = (i + 10) > occurrences.length ? occurrences.length : i + 10;
-      chunks.add(occurrences.sublist(i, end));
-    }
-
-    for (final chunk in chunks) {
       final batch = _firestore.batch();
-      for (final date in chunk) {
+      for (final date in occurrences.sublist(i, end)) {
         final docRef = _eventsCollection(cleanFamilyId).doc();
         batch.set(
           docRef,
@@ -257,9 +250,8 @@ class EventService {
             note: cleanNote,
             category: cleanCategory,
             recurrence: cleanRecurrence,
-            recurrenceIntervalDays: cleanRecurrence == 'custom_days'
-                ? recurrenceIntervalDays
-                : (cleanRecurrence == 'daily' ? 1 : null),
+            recurrenceIntervalDays:
+                cleanRecurrence == 'custom_days' ? recurrenceIntervalDays : (cleanRecurrence == 'daily' ? 1 : null),
             anchorDate: scheduledAt,
             seriesId: seriesId,
             uid: uid,
@@ -297,8 +289,7 @@ class EventService {
       'category': category.trim(),
       'scheduled_at': Timestamp.fromDate(scheduledAt),
       'recurrence': cleanRecurrence,
-      if (cleanRecurrence == 'custom_days')
-        'recurrence_interval_days': recurrenceIntervalDays,
+      if (cleanRecurrence == 'custom_days') 'recurrence_interval_days': recurrenceIntervalDays,
       if (cleanRecurrence != 'custom_days') 'recurrence_interval_days': FieldValue.delete(),
       'updated_at': FieldValue.serverTimestamp(),
     });

@@ -131,80 +131,6 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     );
   }
 
-  Future<void> _showInviteDialog({
-    required String familyId,
-    required String familyName,
-  }) async {
-    String emailValue = '';
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: _surfaceHigh,
-          title: const Text(
-            'Invitar miembro',
-            style: TextStyle(color: _textMain),
-          ),
-          content: TextFormField(
-            onChanged: (value) => emailValue = value,
-            keyboardType: TextInputType.emailAddress,
-            style: const TextStyle(color: _textMain),
-            decoration: const InputDecoration(
-              labelText: 'Correo electrónico',
-              labelStyle: TextStyle(color: _textMuted),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final email = emailValue.trim();
-                if (email.isEmpty || !email.contains('@')) {
-                  return;
-                }
-
-                try {
-                  await _familyService.inviteByEmail(
-                    familyId: familyId,
-                    familyName: familyName,
-                    email: email,
-                  );
-
-                  if (!dialogContext.mounted) {
-                    return;
-                  }
-
-                  Navigator.of(dialogContext).pop();
-
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invitación enviada')),
-                  );
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
-                }
-              },
-              child: const Text('Invitar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _showMemberActions({
     required String familyId,
     required _MemberData member,
@@ -861,22 +787,6 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                 ),
                               ),
                             ),
-                            if (isCurrentUserAdmin)
-                              TextButton(
-                                onPressed: () {
-                                  _showInviteDialog(
-                                    familyId: family!.id,
-                                    familyName: familyName,
-                                  );
-                                },
-                                child: const Text(
-                                  '+ Invite Member',
-                                  style: TextStyle(
-                                    color: _primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -978,64 +888,6 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                               ),
                                             ),
                                           ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (isCurrentUserAdmin)
-                                  InkWell(
-                                  onTap: () {
-                                    _showInviteDialog(
-                                      familyId: family!.id,
-                                      familyName: familyName,
-                                    );
-                                  },
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-                                    decoration: BoxDecoration(
-                                      color: _surface,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: const Color(0xFFB9C3DA).withValues(alpha: 0.15),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor: Color(0xFF273247),
-                                          child: Icon(
-                                            Icons.person_add_alt_1,
-                                            color: Color(0xFFA3AAC4),
-                                          ),
-                                        ),
-                                        SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Invite More',
-                                                style: TextStyle(
-                                                  color: _textMain,
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                              SizedBox(height: 2),
-                                              Text(
-                                                'Add up to 5 family members',
-                                                style: TextStyle(
-                                                  color: _textMuted,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
                                       ],
                                     ),
                                   ),
