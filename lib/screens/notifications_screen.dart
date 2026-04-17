@@ -1,6 +1,10 @@
 import 'dart:ui';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../services/notification_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -18,14 +22,211 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   static const Color _title = Color(0xFFDEE5FF);
   static const Color _muted = Color(0xFFA3AAC4);
 
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final NotificationService _notificationService = NotificationService.instance;
+
   bool _pushEnabled = true;
   bool _feedWater = true;
   bool _walksExercise = true;
   bool _medicationVet = true;
   bool _familyUpdates = false;
 
-  bool _emailDigest = true;
-  bool _tipsOffers = false;
+  bool _quietHoursEnabled = false;
+  TimeOfDay _quietStart = const TimeOfDay(hour: 22, minute: 0);
+  TimeOfDay _quietEnd = const TimeOfDay(hour: 7, minute: 0);
+
+  bool _isLoadingPreferences = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _notificationService.initialize();
+    await _notificationService.requestPermissions();
+    await _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoadingPreferences = false;
+      });
+      return;
+    }
+
+    try {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      final data = doc.data() ?? <String, dynamic>{};
+      final prefsRaw = data['notification_preferences'];
+      final prefs = prefsRaw is Map<String, dynamic>
+          ? prefsRaw
+          : <String, dynamic>{};
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _pushEnabled = (prefs['push_enabled'] as bool?) ?? _pushEnabled;
+        _feedWater = (prefs['feed_water'] as bool?) ?? _feedWater;
+        _walksExercise = (prefs['walks_exercise'] as bool?) ?? _walksExercise;
+        _medicationVet = (prefs['medication_vet'] as bool?) ?? _medicationVet;
+        _familyUpdates = (prefs['family_updates'] as bool?) ?? _familyUpdates;
+        _quietHoursEnabled =
+            (prefs['quiet_hours_enabled'] as bool?) ?? _quietHoursEnabled;
+        _quietStart = _timeFromString(prefs['quiet_hours_start'] as String?) ??
+            _quietStart;
+        _quietEnd =
+            _timeFromString(prefs['quiet_hours_end'] as String?) ?? _quietEnd;
+        _isLoadingPreferences = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoadingPreferences = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load notification settings.')),
+      );
+    }
+  }
+
+  TimeOfDay? _timeFromString(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value.trim());
+    if (match == null) {
+      return null;
+    }
+
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null) {
+      return null;
+    }
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null;
+    }
+
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _timeToStorage(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  String _formatDisplayTime(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  Future<void> _savePreferences(Map<String, dynamic> updates) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('No active user');
+    }
+
+    final payload = <String, dynamic>{
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+
+    for (final entry in updates.entries) {
+      payload['notification_preferences.${entry.key}'] = entry.value;
+    }
+
+    await _firestore.collection('users').doc(user.uid).set(
+          payload,
+          SetOptions(merge: true),
+        );
+
+    await _notificationService.syncUpcomingEventReminders();
+  }
+
+  Future<void> _toggleWithRollback({
+    required bool oldValue,
+    required ValueChanged<bool> localSet,
+    required String storageKey,
+    required bool newValue,
+  }) async {
+    localSet(newValue);
+
+    try {
+      await _savePreferences({storageKey: newValue});
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      localSet(oldValue);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save notification setting.')),
+      );
+    }
+  }
+
+  Future<void> _configureQuietHours() async {
+    final pickedStart = await showTimePicker(
+      context: context,
+      initialTime: _quietStart,
+      helpText: 'Select quiet hours start',
+    );
+    if (pickedStart == null || !mounted) {
+      return;
+    }
+
+    final pickedEnd = await showTimePicker(
+      context: context,
+      initialTime: _quietEnd,
+      helpText: 'Select quiet hours end',
+    );
+    if (pickedEnd == null || !mounted) {
+      return;
+    }
+
+    final oldStart = _quietStart;
+    final oldEnd = _quietEnd;
+    final oldEnabled = _quietHoursEnabled;
+
+    setState(() {
+      _quietStart = pickedStart;
+      _quietEnd = pickedEnd;
+      _quietHoursEnabled = true;
+    });
+
+    try {
+      await _savePreferences({
+        'quiet_hours_enabled': true,
+        'quiet_hours_start': _timeToStorage(pickedStart),
+        'quiet_hours_end': _timeToStorage(pickedEnd),
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _quietStart = oldStart;
+        _quietEnd = oldEnd;
+        _quietHoursEnabled = oldEnabled;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save quiet hours.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,31 +272,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               children: [
                 _buildTopBar(context),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildPushHeader(),
-                        const SizedBox(height: 16),
-                        _buildPushCard(),
-                        const SizedBox(height: 28),
-                        const Text(
-                          'Email Notifications',
-                          style: TextStyle(
-                            color: _title,
-                            fontSize: 39,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.55,
+                  child: _isLoadingPreferences
+                      ? const Center(child: CircularProgressIndicator())
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildPushHeader(),
+                              const SizedBox(height: 16),
+                              _buildPushCard(),
+                              const SizedBox(height: 24),
+                              _buildQuietHoursCard(),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 14),
-                        _buildEmailCard(),
-                        const SizedBox(height: 24),
-                        _buildQuietHoursCard(),
-                      ],
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -172,8 +363,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         Switch.adaptive(
           value: _pushEnabled,
           onChanged: (value) {
+            final oldPush = _pushEnabled;
+            final oldFeedWater = _feedWater;
+            final oldWalksExercise = _walksExercise;
+            final oldMedicationVet = _medicationVet;
+            final oldFamilyUpdates = _familyUpdates;
+
             setState(() {
               _pushEnabled = value;
+              if (!value) {
+                _feedWater = false;
+                _walksExercise = false;
+                _medicationVet = false;
+                _familyUpdates = false;
+              }
+            });
+
+            _savePreferences({
+              'push_enabled': value,
+              if (!value) 'feed_water': false,
+              if (!value) 'walks_exercise': false,
+              if (!value) 'medication_vet': false,
+              if (!value) 'family_updates': false,
+            }).catchError((_) {
+              if (!mounted) {
+                return;
+              }
+              setState(() {
+                _pushEnabled = oldPush;
+                _feedWater = oldFeedWater;
+                _walksExercise = oldWalksExercise;
+                _medicationVet = oldMedicationVet;
+                _familyUpdates = oldFamilyUpdates;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not save notification setting.')),
+              );
             });
           },
           activeThumbColor: const Color(0xFFD9ECFF),
@@ -200,11 +425,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             iconBg: const Color(0xFF172A4C),
             title: 'Feeding & Water',
             value: _feedWater,
-            onChanged: (value) {
-              setState(() {
-                _feedWater = value;
-              });
-            },
+            onChanged: !_pushEnabled
+                ? null
+                : (value) => _toggleWithRollback(
+                      oldValue: _feedWater,
+                      localSet: (v) => setState(() => _feedWater = v),
+                      storageKey: 'feed_water',
+                      newValue: value,
+                    ),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -213,11 +441,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             iconBg: const Color(0xFF193035),
             title: 'Walks & Exercise',
             value: _walksExercise,
-            onChanged: (value) {
-              setState(() {
-                _walksExercise = value;
-              });
-            },
+            onChanged: !_pushEnabled
+                ? null
+                : (value) => _toggleWithRollback(
+                      oldValue: _walksExercise,
+                      localSet: (v) => setState(() => _walksExercise = v),
+                      storageKey: 'walks_exercise',
+                      newValue: value,
+                    ),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -226,11 +457,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             iconBg: const Color(0xFF3A1B2D),
             title: 'Medication & Vet',
             value: _medicationVet,
-            onChanged: (value) {
-              setState(() {
-                _medicationVet = value;
-              });
-            },
+            onChanged: !_pushEnabled
+                ? null
+                : (value) => _toggleWithRollback(
+                      oldValue: _medicationVet,
+                      localSet: (v) => setState(() => _medicationVet = v),
+                      storageKey: 'medication_vet',
+                      newValue: value,
+                    ),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -239,48 +473,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             iconBg: const Color(0xFF30261A),
             title: 'Family Updates',
             value: _familyUpdates,
-            onChanged: (value) {
-              setState(() {
-                _familyUpdates = value;
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmailCard() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: [
-          _EmailTile(
-            icon: Icons.email_outlined,
-            title: 'Weekly Health Digest',
-            subtitle: 'Summary of all pets activity and logs',
-            value: _emailDigest,
-            onChanged: (value) {
-              setState(() {
-                _emailDigest = value;
-              });
-            },
-          ),
-          const SizedBox(height: 8),
-          _EmailTile(
-            icon: Icons.campaign_outlined,
-            title: 'Tips & Offers',
-            subtitle: 'Pet care advice and partner discounts',
-            value: _tipsOffers,
-            onChanged: (value) {
-              setState(() {
-                _tipsOffers = value;
-              });
-            },
+            onChanged: !_pushEnabled
+                ? null
+                : (value) => _toggleWithRollback(
+                      oldValue: _familyUpdates,
+                      localSet: (v) => setState(() => _familyUpdates = v),
+                      storageKey: 'family_updates',
+                      newValue: value,
+                    ),
           ),
         ],
       ),
@@ -324,13 +524,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Quiet Hours',
-                style: TextStyle(
-                  color: _title,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Quiet Hours',
+                      style: TextStyle(
+                        color: _title,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: _quietHoursEnabled,
+                    onChanged: (value) {
+                      final oldValue = _quietHoursEnabled;
+                      setState(() {
+                        _quietHoursEnabled = value;
+                      });
+
+                      _savePreferences({'quiet_hours_enabled': value}).catchError((_) {
+                        if (!mounted) {
+                          return;
+                        }
+                        setState(() {
+                          _quietHoursEnabled = oldValue;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Could not save quiet hours.')),
+                        );
+                      });
+                    },
+                    activeThumbColor: const Color(0xFFD9ECFF),
+                    activeTrackColor: _primary,
+                    inactiveThumbColor: const Color(0xFFB5BED2),
+                    inactiveTrackColor: _surfaceHigh,
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               const Text(
@@ -339,6 +570,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   color: _muted,
                   fontSize: 15,
                   height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Current: ${_formatDisplayTime(_quietStart)} - ${_formatDisplayTime(_quietEnd)}',
+                style: const TextStyle(
+                  color: _title,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 16),
@@ -352,7 +592,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ),
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: _configureQuietHours,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     shadowColor: Colors.transparent,
@@ -383,7 +623,7 @@ class _PushCategoryTile extends StatelessWidget {
   final Color iconBg;
   final String title;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
 
   const _PushCategoryTile({
     required this.icon,
@@ -391,7 +631,7 @@ class _PushCategoryTile extends StatelessWidget {
     required this.iconBg,
     required this.title,
     required this.value,
-    required this.onChanged,
+    this.onChanged,
   });
 
   @override
@@ -426,7 +666,7 @@ class _PushCategoryTile extends StatelessWidget {
           ),
           Checkbox(
             value: value,
-            onChanged: (newValue) => onChanged(newValue ?? false),
+            onChanged: onChanged == null ? null : (newValue) => onChanged!(newValue ?? false),
             activeColor: const Color(0xFF2D8BE3),
             checkColor: Colors.white,
             side: BorderSide(
@@ -442,76 +682,3 @@ class _PushCategoryTile extends StatelessWidget {
   }
 }
 
-class _EmailTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _EmailTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFF20304E),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(icon, color: const Color(0xFFA8B7CE), size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFFDEE5FF),
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFFA3AAC4),
-                    fontSize: 15,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Checkbox(
-            value: value,
-            onChanged: (newValue) => onChanged(newValue ?? false),
-            activeColor: const Color(0xFF2D8BE3),
-            checkColor: Colors.white,
-            side: BorderSide(
-              color: const Color(0xFF8A94A8).withValues(alpha: 0.35),
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

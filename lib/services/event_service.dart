@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'notification_service.dart';
+
 class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NotificationService _notificationService = NotificationService.instance;
 
   Future<String?> _resolveCurrentUsername() async {
     final uid = _auth.currentUser?.uid;
@@ -238,8 +241,10 @@ class EventService {
     for (var i = 0; i < occurrences.length; i += 10) {
       final end = (i + 10) > occurrences.length ? occurrences.length : i + 10;
       final batch = _firestore.batch();
+      final chunkDocs = <({String id, DateTime when})>[];
       for (final date in occurrences.sublist(i, end)) {
         final docRef = _eventsCollection(cleanFamilyId).doc();
+        chunkDocs.add((id: docRef.id, when: date));
         batch.set(
           docRef,
           _eventPayload(
@@ -259,6 +264,16 @@ class EventService {
         );
       }
       await batch.commit();
+
+      for (final created in chunkDocs) {
+        await _notificationService.scheduleEventReminder(
+          familyId: cleanFamilyId,
+          eventId: created.id,
+          title: cleanTitle,
+          scheduledAt: created.when,
+          category: cleanCategory,
+        );
+      }
     }
   }
 
@@ -282,17 +297,32 @@ class EventService {
       throw ArgumentError('Recurrence no soportada: $recurrence');
     }
 
-    await _eventsCollection(familyId).doc(eventId).update({
-      'pet_id': petId.trim(),
-      'title': title.trim(),
-      'note': note.trim(),
-      'category': category.trim(),
+    final cleanFamilyId = familyId.trim();
+    final cleanPetId = petId.trim();
+    final cleanTitle = title.trim();
+    final cleanNote = note.trim();
+    final cleanCategory = category.trim();
+
+    await _eventsCollection(cleanFamilyId).doc(eventId).update({
+      'family_id': cleanFamilyId,
+      'pet_id': cleanPetId,
+      'title': cleanTitle,
+      'note': cleanNote,
+      'category': cleanCategory,
       'scheduled_at': Timestamp.fromDate(scheduledAt),
       'recurrence': cleanRecurrence,
       if (cleanRecurrence == 'custom_days') 'recurrence_interval_days': recurrenceIntervalDays,
       if (cleanRecurrence != 'custom_days') 'recurrence_interval_days': FieldValue.delete(),
       'updated_at': FieldValue.serverTimestamp(),
     });
+
+    await _notificationService.scheduleEventReminder(
+      familyId: cleanFamilyId,
+      eventId: eventId,
+      title: cleanTitle,
+      scheduledAt: scheduledAt,
+      category: cleanCategory,
+    );
   }
 
   Future<void> deleteEvent({
@@ -300,6 +330,10 @@ class EventService {
     required String eventId,
   }) async {
     await _eventsCollection(familyId).doc(eventId).delete();
+    await _notificationService.cancelEventReminder(
+      familyId: familyId,
+      eventId: eventId,
+    );
   }
 
   Future<void> setEventCompleted({
@@ -323,6 +357,10 @@ class EventService {
         'completed_by_email': FieldValue.delete(),
         'updated_at': FieldValue.serverTimestamp(),
       });
+      await _notificationService.cancelEventReminder(
+        familyId: familyId,
+        eventId: eventId,
+      );
       return;
     }
 
@@ -334,6 +372,27 @@ class EventService {
       'completed_by_email': FieldValue.delete(),
       'updated_at': FieldValue.serverTimestamp(),
     });
+
+    final eventDoc = await _eventsCollection(familyId).doc(eventId).get();
+    final data = eventDoc.data();
+    if (data == null) {
+      return;
+    }
+
+    final scheduledTs = data['scheduled_at'];
+    final title = (data['title'] as String?)?.trim() ?? '';
+    final category = (data['category'] as String?)?.trim() ?? 'general';
+    if (scheduledTs is! Timestamp || title.isEmpty) {
+      return;
+    }
+
+    await _notificationService.scheduleEventReminder(
+      familyId: familyId,
+      eventId: eventId,
+      title: title,
+      scheduledAt: scheduledTs.toDate(),
+      category: category,
+    );
   }
 
   Future<void> deleteSeries({
@@ -351,10 +410,19 @@ class EventService {
     for (var i = 0; i < query.docs.length; i += 100) {
       final end = (i + 100) > query.docs.length ? query.docs.length : i + 100;
       final batch = _firestore.batch();
+      final docIds = <String>[];
       for (final doc in query.docs.sublist(i, end)) {
+        docIds.add(doc.id);
         batch.delete(doc.reference);
       }
       await batch.commit();
+
+      for (final docId in docIds) {
+        await _notificationService.cancelEventReminder(
+          familyId: familyId,
+          eventId: docId,
+        );
+      }
     }
   }
 }
