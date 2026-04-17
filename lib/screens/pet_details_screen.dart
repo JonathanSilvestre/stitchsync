@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../utils/pet_avatar_catalog.dart';
 
 class PetDetailsScreen extends StatelessWidget {
@@ -19,19 +20,49 @@ class PetDetailsScreen extends StatelessWidget {
   static const Color _title = Color(0xFFDEE5FF);
   static const Color _muted = Color(0xFFA3AAC4);
 
+  String _localizedNotes(BuildContext context, String raw) {
+    final parts = raw
+        .split('|')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .map((piece) {
+          final lower = piece.toLowerCase();
+          if (lower.startsWith('weight:')) {
+            return '${context.tr('Weight')}:${piece.substring(piece.indexOf(':') + 1)}';
+          }
+          if (lower.startsWith('gender:')) {
+            final value = piece.substring(piece.indexOf(':') + 1).trim();
+            final localizedGender = value.toLowerCase() == 'female'
+                ? context.tr('Female')
+                : context.tr('Male');
+            return '${context.tr('Gender')}: $localizedGender';
+          }
+          if (lower.startsWith('dob:')) {
+            return '${context.tr('DOB')}:${piece.substring(piece.indexOf(':') + 1)}';
+          }
+          if (lower.startsWith('notes:')) {
+            return '${context.tr('Notes')}:${piece.substring(piece.indexOf(':') + 1)}';
+          }
+          return piece;
+        })
+        .toList(growable: false);
+
+    return parts.join(' | ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = (petData['name'] as String?)?.trim().isNotEmpty == true
         ? (petData['name'] as String).trim()
-        : 'Pet';
+      : context.tr('Pet');
     final breed = (petData['breed'] as String?)?.trim().isNotEmpty == true
         ? (petData['breed'] as String).trim()
-        : 'Unknown breed';
+      : context.tr('Unknown breed');
     final age = petData['age'];
-    final ageLabel = age is num ? '${age.toInt()} years' : 'Not specified';
+    final ageLabel = age is num ? '${age.toInt()} ${context.tr('years')}' : context.tr('Not specified');
     final notes = (petData['notes'] as String?)?.trim().isNotEmpty == true
-        ? (petData['notes'] as String).trim()
-        : 'No additional notes for this companion yet.';
+      ? _localizedNotes(context, (petData['notes'] as String).trim())
+      : context.tr('No additional notes for this companion yet.');
     final photoUrl = (petData['photo_url'] as String?) ?? '';
     final avatarId = (petData['avatar_id'] as String?) ?? '';
 
@@ -83,12 +114,16 @@ class PetDetailsScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 2),
-                      const Text(
-                        'Pet Details',
-                        style: TextStyle(
-                          color: _title,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
+                      Expanded(
+                        child: Text(
+                          context.tr('Pet Details'),
+                          style: const TextStyle(
+                            color: _title,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -154,7 +189,7 @@ class PetDetailsScreen extends StatelessWidget {
                             const SizedBox(width: 10),
                             _InfoChip(
                               icon: Icons.group_outlined,
-                              text: '$familyMemberCount family members',
+                              text: '$familyMemberCount ${context.tr('family members')}',
                             ),
                           ],
                         ),
@@ -172,9 +207,9 @@ class PetDetailsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Notes',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Notes'),
+                          style: const TextStyle(
                             color: _title,
                             fontSize: 20,
                             fontWeight: FontWeight.w700,

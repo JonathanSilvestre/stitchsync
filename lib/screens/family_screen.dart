@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_i18n.dart';
 import 'create_family_screen.dart';
 import '../services/family_service.dart';
 import '../services/event_service.dart';
@@ -63,24 +64,24 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: _surfaceHigh,
-          title: const Text(
-            'Unirme con código',
-            style: TextStyle(color: _textMain),
+          title: Text(
+            context.tr('Unirme con código'),
+            style: const TextStyle(color: _textMain),
           ),
           content: TextFormField(
             onChanged: (value) => codeValue = value,
             textCapitalization: TextCapitalization.characters,
             style: const TextStyle(color: _textMain),
-            decoration: const InputDecoration(
-              labelText: 'Código de invitación',
-              hintText: 'Ej. STITCH-ABC',
-              labelStyle: TextStyle(color: _textMuted),
+            decoration: InputDecoration(
+              labelText: context.tr('Invitation code'),
+              hintText: context.tr('e.g. STITCH-ABC'),
+              labelStyle: const TextStyle(color: _textMuted),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -104,7 +105,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   }
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Te uniste a la familia correctamente.')),
+                    SnackBar(content: Text(context.tr('Te uniste a la familia correctamente.'))),
                   );
 
                   setState(() {});
@@ -118,13 +119,13 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                       content: Text(
                         e is FirebaseAuthException
                             ? _familyService.getReadableError(e)
-                            : (e.message ?? 'No se pudo unir a la familia.'),
+                            : (e.message ?? context.tr('Could not join family.')),
                       ),
                     ),
                   );
                 }
               },
-              child: const Text('Unirme'),
+              child: Text(context.tr('Unirme')),
             ),
           ],
         );
@@ -172,9 +173,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'make_admin'),
                     icon: const Icon(Icons.shield_outlined, color: _primary),
-                    label: const Text(
-                      'Asignar como administrador',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Assign as administrator'),
+                      style: const TextStyle(
                         color: _textMain,
                         fontWeight: FontWeight.w700,
                       ),
@@ -186,9 +187,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'remove_member'),
                     icon: const Icon(Icons.person_remove_outlined, color: Color(0xFFFF9A9A)),
-                    label: const Text(
-                      'Eliminar de la familia',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Remove from family'),
+                      style: const TextStyle(
                         color: Color(0xFFFFB0B0),
                         fontWeight: FontWeight.w700,
                       ),
@@ -210,7 +211,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
         );
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Miembro promovido a administrador.')),
+          SnackBar(content: Text(context.tr('Miembro promovido a administrador.'))),
         );
         setState(() {});
       } on FirebaseAuthException catch (e) {
@@ -233,7 +234,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Miembro eliminado de la familia.')),
+        SnackBar(content: Text(context.tr('Miembro eliminado de la familia.'))),
       );
       setState(() {});
     } on FirebaseAuthException catch (e) {
@@ -253,21 +254,21 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _surfaceHigh,
-        title: const Text('Salir de la familia', style: TextStyle(color: _textMain)),
+        title: Text(context.tr('Salir de la familia'), style: const TextStyle(color: _textMain)),
         content: Text(
           isCurrentUserAdmin && !hasAnotherAdmin
-              ? 'Eres el único administrador. Primero asigna otro administrador para poder salir.'
-              : '¿Seguro que quieres salir de esta familia?',
+              ? context.tr('You are the only administrator. Assign another administrator before leaving.')
+              : context.tr('Are you sure you want to leave this family?'),
           style: const TextStyle(color: _textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancelar'),
+            child: Text(context.tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Salir'),
+            child: Text(context.tr('Leave')),
           ),
         ],
       ),
@@ -278,7 +279,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     if (isCurrentUserAdmin && !hasAnotherAdmin) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes asignar otro administrador antes de salir.')),
+        SnackBar(content: Text(context.tr('Debes asignar otro administrador antes de salir.'))),
       );
       return;
     }
@@ -288,7 +289,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       await _syncMembershipIndex();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saliste de la familia.')),
+        SnackBar(content: Text(context.tr('Saliste de la familia.'))),
       );
       setState(() {});
     } on FirebaseAuthException catch (e) {
@@ -320,12 +321,12 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       final isAdmin = isOwner || adminSet.contains(doc.id);
       return _MemberData(
         uid: doc.id,
-        name: (username != null && username.isNotEmpty) ? username : 'Member',
+        name: (username != null && username.isNotEmpty) ? username : context.tr('Member'),
         subtitle: isOwner
-            ? 'Owner'
+          ? context.tr('Owner')
             : isAdmin
-                ? 'Admin'
-                : 'Member',
+            ? context.tr('Admin')
+            : context.tr('Member'),
         isOwner: isOwner,
         isAdmin: isAdmin,
         avatarId: resolveUserAvatar(avatarId).id,
@@ -390,7 +391,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
           builder: (context, petsSnapshot) {
             final pets = petsSnapshot.data ?? const [];
 
-            String petName = 'tu mascota';
+            String petName = context.tr('your pet');
             String petIdForLookup = selectedPetId;
 
             if (pets.isNotEmpty) {
@@ -405,7 +406,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
 
               final petData = petDoc.data();
               final resolvedName = (petData['name'] as String?)?.trim();
-              petName = (resolvedName != null && resolvedName.isNotEmpty) ? resolvedName : 'tu mascota';
+                petName = (resolvedName != null && resolvedName.isNotEmpty)
+                  ? resolvedName
+                  : context.tr('your pet');
               petIdForLookup = petDoc.id;
             }
 
@@ -417,10 +420,10 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   color: const Color(0xFF1F3A35),
                   borderRadius: BorderRadius.circular(22),
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
                         Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
                         SizedBox(width: 8),
@@ -435,10 +438,10 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                       ],
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 12),
                     Text(
-                      'No hay mascota activa para mostrar historial de comida.',
-                      style: TextStyle(
+                      context.tr('No active pet to show feeding history.'),
+                      style: const TextStyle(
                         color: Color(0xFFC9E9D9),
                         fontSize: 16,
                         height: 1.45,
@@ -481,13 +484,16 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
 
                 String pulseMessage;
                 if (latestFeedingCompleted == null || latestCompletedAt == null) {
-                  pulseMessage = 'No hay eventos de comida completados hoy para $petName.';
+                  pulseMessage = '${context.tr('No feeding events completed today for')} $petName.';
                 } else {
                   final feedingData = latestFeedingCompleted.data();
                   final completedBy = ((feedingData['completed_by_username'] as String?) ?? '').trim();
-                  final completedByLabel = completedBy.isNotEmpty ? completedBy : 'alguien de la familia';
+                  final completedByLabel = completedBy.isNotEmpty
+                      ? completedBy
+                      : context.tr('someone in the family');
                   final timeLabel = _formatShortTime(latestCompletedAt);
-                  pulseMessage = '$petName was last fed by $completedByLabel at $timeLabel.';
+                  pulseMessage =
+                      '$petName ${context.tr('was last fed by')} $completedByLabel ${context.tr('at')} $timeLabel.';
                 }
 
                 return Container(
@@ -557,7 +563,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Text(
-                  'Error cargando familias:\n${snapshot.error}',
+                  '${context.tr('Error loading families')}:\n${snapshot.error}',
                   style: const TextStyle(color: _textMuted),
                 ),
               ),
@@ -642,9 +648,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      const Text(
-                        'My Family',
-                        style: TextStyle(
+                      Text(
+                        context.tr('My Family'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 40,
                           fontWeight: FontWeight.w700,
@@ -654,8 +660,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                       const SizedBox(height: 8),
                       Text(
                         hasFamily
-                            ? 'Manage everyone who helps take care of Fido.'
-                            : 'No hay familia disponible. Crea una para comenzar.',
+                          ? context.tr('Manage everyone who helps take care of your pet.')
+                          : context.tr('No family available. Create one to get started.'),
                         style: const TextStyle(
                           color: _textMuted,
                           fontSize: 16,
@@ -684,9 +690,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'SHARE INVITE CODE',
-                              style: TextStyle(
+                            Text(
+                              context.tr('SHARE INVITE CODE'),
+                              style: const TextStyle(
                                 color: Color(0xFFD8EAFF),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -716,6 +722,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                   FilledButton(
                                     onPressed: hasFamily
                                         ? () async {
+                                            final copiedMessage = context.tr('Invitation code copied.');
                                             final messenger = ScaffoldMessenger.of(context);
                                             await Clipboard.setData(
                                               ClipboardData(text: inviteCode),
@@ -724,9 +731,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                               return;
                                             }
                                             messenger.showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Código copiado'),
-                                              ),
+                                              SnackBar(content: Text(copiedMessage)),
                                             );
                                           }
                                         : () async {
@@ -736,7 +741,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                       backgroundColor: Colors.white,
                                       foregroundColor: const Color(0xFF0C53A1),
                                     ),
-                                    child: Text(hasFamily ? 'Copy' : 'Crear'),
+                                    child: Text(hasFamily ? context.tr('Copy') : context.tr('Create')),
                                   ),
                                 ],
                               ),
@@ -744,8 +749,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                             const SizedBox(height: 12),
                             Text(
                               hasFamily
-                                  ? 'Send this code to family members to sync your pet\'s schedule.'
-                                  : 'Crea una familia para habilitar invitaciones y sincronización.',
+                                  ? context.tr('Send this code to family members to sync your pet\'s schedule.')
+                                  : context.tr('Create a family to enable invites and sync.'),
                               style: const TextStyle(
                                 color: Color(0xFFE3F0FF),
                                 fontSize: 14,
@@ -766,9 +771,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                   ),
                                   icon: const Icon(Icons.group_add_rounded),
-                                  label: const Text(
-                                    'Unirme con código',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  label: Text(
+                                    context.tr('Join with code'),
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
@@ -780,10 +785,10 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         const SizedBox(height: 20),
                         Row(
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Active Members',
-                                style: TextStyle(
+                                context.tr('Active Members'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 22,
                                   fontWeight: FontWeight.w700,
@@ -831,7 +836,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                               Text(
                                                 member.name +
                                                     (member.uid == FirebaseAuth.instance.currentUser?.uid
-                                                        ? ' (You)'
+                                                        ? ' (${context.tr('You')})'
                                                         : ''),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -914,9 +919,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             icon: const Icon(Icons.exit_to_app_rounded),
-                            label: const Text(
-                              'Salir de la familia',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                            label: Text(
+                              context.tr('Leave family'),
+                              style: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
                         ),

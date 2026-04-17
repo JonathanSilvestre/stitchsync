@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/event_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
@@ -202,18 +203,19 @@ class _NewEventScreenState extends State<NewEventScreen> {
     if (_isSaving) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    final customRecurrenceError = context.tr('For custom recurrence, enter a number greater than 0.');
 
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Ingresa un título para el evento.')),
+        SnackBar(content: Text(context.tr('Enter a title for the event.'))),
       );
       return;
     }
 
     if (_selectedDate == null || _selectedTime == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Selecciona fecha y hora del evento.')),
+        SnackBar(content: Text(context.tr('Select event date and time.'))),
       );
       return;
     }
@@ -230,7 +232,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
           _isSaving = false;
         });
         messenger.showSnackBar(
-          const SnackBar(content: Text('Primero crea una familia para guardar eventos.')),
+          SnackBar(content: Text(context.tr('First create a family to save events.'))),
         );
         return;
       }
@@ -242,7 +244,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
           _isSaving = false;
         });
         messenger.showSnackBar(
-          const SnackBar(content: Text('Necesitas al menos una mascota para crear eventos.')),
+          SnackBar(content: Text(context.tr('You need at least one pet to create events.'))),
         );
         return;
       }
@@ -268,7 +270,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
           _isSaving = false;
         });
         messenger.showSnackBar(
-          const SnackBar(content: Text('For custom recurrence, enter a number greater than 0.')),
+          SnackBar(content: Text(customRecurrenceError)),
         );
         return;
       }
@@ -305,7 +307,9 @@ class _NewEventScreenState extends State<NewEventScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            _isEditing ? 'Changes saved successfully.' : 'Event saved successfully.',
+            _isEditing
+                ? context.tr('Changes saved successfully')
+                : context.tr('Event saved successfully.'),
           ),
         ),
       );
@@ -318,9 +322,9 @@ class _NewEventScreenState extends State<NewEventScreen> {
 
       if (e.code == 'permission-denied') {
         messenger.showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'You do not have permission to write events in this family. Check Firestore rules and membership.',
+              context.tr('You do not have permission to write events in this family. Check Firestore rules and membership.'),
             ),
           ),
         );
@@ -328,7 +332,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       }
 
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not save event: ${e.message ?? e.code}')),
+        SnackBar(content: Text('${context.tr('Could not save event:')} ${e.message ?? e.code}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -336,7 +340,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
         _isSaving = false;
       });
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not save event: $e')),
+        SnackBar(content: Text('${context.tr('Could not save event:')} $e')),
       );
     }
   }
@@ -402,7 +406,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isEditing ? 'Edit Event' : 'Add Event',
+                          _isEditing ? context.tr('Edit Event') : context.tr('Add Event'),
                           style: TextStyle(
                             color: _textMain,
                             fontSize: 44,
@@ -411,24 +415,24 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Schedule a new activity for your furry companion.',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Schedule a new activity for your furry companion.'),
+                          style: const TextStyle(
                             color: _textMuted,
                             fontSize: 16,
                             height: 1.45,
                           ),
                         ),
                         const SizedBox(height: 24),
-                        const _FieldLabel('EVENT TITLE'),
+                        _FieldLabel(context.tr('EVENT TITLE')),
                         const SizedBox(height: 8),
                         _InputField(
                           controller: _titleController,
-                          hint: 'e.g. Morning Promenade',
+                          hint: context.tr('e.g. Morning Promenade'),
                           focused: true,
                         ),
                         const SizedBox(height: 18),
-                        const _FieldLabel('DATE'),
+                        _FieldLabel(context.tr('DATE')),
                         const SizedBox(height: 8),
                         _ActionField(
                           label: _dateLabel(),
@@ -436,7 +440,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           onTap: _pickDate,
                         ),
                         const SizedBox(height: 18),
-                        const _FieldLabel('TIME'),
+                        _FieldLabel(context.tr('TIME')),
                         const SizedBox(height: 8),
                         _ActionField(
                           label: _timeLabel(),
@@ -444,7 +448,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           onTap: _pickTime,
                         ),
                         const SizedBox(height: 18),
-                        const _FieldLabel('REPEAT'),
+                        _FieldLabel(context.tr('REPEAT')),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
@@ -473,7 +477,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                       : null,
                                 ),
                                 child: Text(
-                                  item.label,
+                                  context.tr(item.label),
                                   style: TextStyle(
                                     color:
                                         selected ? const Color(0xFFDEE5FF) : const Color(0xFFBAC7E0),
@@ -489,12 +493,12 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           const SizedBox(height: 10),
                           _InputField(
                             controller: _customDaysController,
-                            hint: 'Every how many days? (e.g. 3)',
+                            hint: context.tr('Every how many days? (e.g. 3)'),
                             keyboardType: TextInputType.number,
                           ),
                         ],
                         const SizedBox(height: 20),
-                        const _FieldLabel('CATEGORY'),
+                        _FieldLabel(context.tr('CATEGORY')),
                         const SizedBox(height: 10),
                         GridView.builder(
                           shrinkWrap: true,
@@ -531,7 +535,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                     Icon(item.icon, color: item.color, size: 24),
                                     const SizedBox(height: 8),
                                     Text(
-                                      item.label,
+                                      context.tr(item.label),
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: Color(0xFFC5CEE2),
@@ -590,9 +594,9 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Note for Co-Owners',
-                                style: TextStyle(
+                              Text(
+                                context.tr('Note for Co-Owners'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 24,
                                   fontWeight: FontWeight.w600,
@@ -603,17 +607,17 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                 controller: _noteController,
                                 maxLines: 2,
                                 style: const TextStyle(color: Color(0xFFCED7EC)),
-                                decoration: const InputDecoration(
-                                  hintText: 'Any specific instructions for this event?',
+                                decoration: InputDecoration(
+                                  hintText: context.tr('Any specific instructions for this event?'),
                                   hintStyle: TextStyle(color: Color(0xFF5E6D8B)),
                                   border: InputBorder.none,
                                   isCollapsed: true,
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              const Row(
+                              Row(
                                 children: [
-                                  CircleAvatar(
+                                  const CircleAvatar(
                                     radius: 12,
                                     backgroundColor: Color(0xFFE8AAFF),
                                     child: Text(
@@ -625,10 +629,10 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                       ),
                                     ),
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    'CREATED BY YOU',
-                                    style: TextStyle(
+                                    context.tr('CREATED BY YOU'),
+                                    style: const TextStyle(
                                       color: Color(0xFF6A7894),
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
@@ -681,7 +685,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                       color: Color(0xFF0A2550),
                                     ),
                                   )
-                                : Text(_isEditing ? 'Save Changes' : 'Save Event'),
+                                : Text(_isEditing ? context.tr('Save Changes') : context.tr('Save Event')),
                           ),
                         ),
                       ],
@@ -858,25 +862,25 @@ class _NewEventBottomBar extends StatelessWidget {
         children: [
           _NavItem(
             icon: Icons.home_rounded,
-            label: 'HOME',
+            label: context.tr('HOME'),
             selected: false,
             onTap: () => onTap(0),
           ),
           _NavItem(
             icon: Icons.calendar_today_rounded,
-            label: 'CALENDAR',
+            label: context.tr('CALENDAR'),
             selected: true,
             onTap: () => onTap(1),
           ),
           _NavItem(
             icon: Icons.groups_rounded,
-            label: 'FAMILY',
+            label: context.tr('FAMILY'),
             selected: false,
             onTap: () => onTap(2),
           ),
           _NavItem(
             icon: Icons.person_rounded,
-            label: 'PROFILE',
+            label: context.tr('PROFILE'),
             selected: false,
             onTap: () => onTap(3),
           ),
@@ -920,7 +924,7 @@ class _NavItem extends StatelessWidget {
               Icon(icon, color: fg, size: 20),
               const SizedBox(height: 4),
               Text(
-                label,
+                  context.tr(label),
                 style: TextStyle(
                   color: fg,
                   fontSize: 11,

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 import 'register_screen.dart';
 
@@ -55,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not sign in.')),
+          SnackBar(content: Text(context.tr('Could not sign in.'))),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -107,8 +108,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Recuperar contraseña',
+                    Text(
+                      context.tr('Recover password'),
                       style: TextStyle(
                         color: _title,
                         fontSize: 24,
@@ -117,8 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'Ingresa tu usuario o correo para enviarte el enlace de recuperación.',
+                    Text(
+                      context.tr('Enter your username or email to send the recovery link.'),
                       style: TextStyle(
                         color: _muted,
                         fontSize: 14,
@@ -135,9 +136,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontSize: 15,
                       ),
                       decoration: InputDecoration(
-                        labelText: 'Usuario o correo',
+                        labelText: context.tr('Username or email'),
                         labelStyle: const TextStyle(color: Color(0xFFA3AAC4)),
-                        hintText: 'ejemplo@correo.com o usuario123',
+                        hintText: context.tr('example@mail.com or username123'),
                         hintStyle: const TextStyle(color: Color(0xFF717D92)),
                         prefixIcon: const Icon(
                           Icons.alternate_email_rounded,
@@ -180,8 +181,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               foregroundColor: _muted,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text(
-                              'Cancelar',
+                            child: Text(
+                              context.tr('Cancel'),
                               style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -204,9 +205,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       final value = recoveryValue.trim();
                                       if (value.isEmpty) {
                                         messenger.showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Ingresa usuario o correo'),
-                                          ),
+                                          SnackBar(content: Text(context.tr('Enter username or email'))),
                                         );
                                         return;
                                       }
@@ -214,6 +213,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                       setDialogState(() {
                                         isSending = true;
                                       });
+
+                                      final resetSentText = context.tr(
+                                        'We sent you an email to recover your password',
+                                      );
 
                                       try {
                                         await _auth.sendPasswordReset(value);
@@ -228,10 +231,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                         }
 
                                         messenger.showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Te enviamos un correo para recuperar la contraseña',
-                                            ),
+                                          SnackBar(
+                                            content: Text(resetSentText),
                                           ),
                                         );
                                       } on FirebaseAuthException catch (e) {
@@ -275,7 +276,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Color(0xFF0E2C52),
                                       ),
                                     )
-                                  : const Text('Enviar'),
+                                  : Text(context.tr('Enviar')),
                             ),
                           ),
                         ),
@@ -401,9 +402,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Text(
-                              'Login',
-                              style: TextStyle(
+                            Text(
+                              context.tr('Login'),
+                              style: const TextStyle(
                                 color: _title,
                                 fontSize: 42,
                                 fontWeight: FontWeight.w700,
@@ -437,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: 16,
                               ),
                               decoration: InputDecoration(
-                                hintText: 'hello@family.com',
+                                hintText: context.tr('hello@family.com'),
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF717D92),
                                   fontWeight: FontWeight.w500,
@@ -470,7 +471,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'Ingresa tu usuario o correo';
+                                  return context.tr('Enter your username or email');
                                 }
 
                                 return null;
@@ -480,8 +481,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
-                                  'Password',
+                                Text(
+                                  context.tr('Password'),
                                   style: TextStyle(
                                     color: Color(0xFFBAC1D4),
                                     fontSize: 14,
@@ -497,8 +498,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     tapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  child: const Text(
-                                    'Forgot?',
+                                  child: Text(
+                                    context.tr('Forgot?'),
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
@@ -516,7 +517,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: 16,
                               ),
                               decoration: InputDecoration(
-                                hintText: '........',
+                                hintText: context.tr('........'),
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF717D92),
                                   fontWeight: FontWeight.w500,
@@ -613,7 +614,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           color: Color(0xFF0E2C52),
                                         ),
                                       )
-                                    : const Text('Login'),
+                                    : Text(context.tr('Login')),
                               ),
                             ),
                             const SizedBox(height: 26),

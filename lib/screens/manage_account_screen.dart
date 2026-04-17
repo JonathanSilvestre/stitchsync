@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 
 class ManageAccountScreen extends StatefulWidget {
@@ -95,7 +96,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo guardar el idioma')),
+        SnackBar(content: Text(context.tr('Could not save language preference.'))),
       );
     }
   }
@@ -127,7 +128,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
       _confirmNewPasswordController.clear();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cuenta actualizada correctamente')),
+        SnackBar(content: Text(context.tr('Account updated successfully.'))),
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) {
@@ -158,7 +159,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Administrar cuenta'),
+        title: Text(context.tr('Manage account')),
         backgroundColor: const Color(0xFF143A5A),
         foregroundColor: Colors.white,
       ),
@@ -184,9 +185,9 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Actualiza tus datos de acceso',
-                        style: TextStyle(
+                      Text(
+                        context.tr('Update your access details'),
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF17324D),
@@ -195,14 +196,14 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                       const SizedBox(height: 16),
                       _field(
                         controller: _usernameController,
-                        label: 'Nuevo nombre de usuario',
+                        label: context.tr('New username'),
                         icon: Icons.person_outline,
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
-                            return 'Ingresa tu nombre de usuario';
+                            return context.tr('Enter your username');
                           }
                           if (value.trim().length < 3) {
-                            return 'Debe tener al menos 3 caracteres';
+                            return context.tr('It must have at least 3 characters');
                           }
                           return null;
                         },
@@ -210,7 +211,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                       const SizedBox(height: 12),
                       _field(
                         controller: _currentPasswordController,
-                        label: 'Contraseña actual',
+                        label: context.tr('Current password'),
                         icon: Icons.lock_outline,
                         obscureText: _obscureCurrent,
                         suffix: IconButton(
@@ -227,7 +228,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Debes ingresar tu contraseña actual';
+                            return context.tr('You must enter your current password');
                           }
                           return null;
                         },
@@ -235,7 +236,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                       const SizedBox(height: 12),
                       _field(
                         controller: _newPasswordController,
-                        label: 'Nueva contraseña (opcional)',
+                        label: context.tr('New password (optional)'),
                         icon: Icons.password_outlined,
                         obscureText: _obscureNew,
                         suffix: IconButton(
@@ -252,7 +253,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                         ),
                         validator: (value) {
                           if (value != null && value.isNotEmpty && value.length < 6) {
-                            return 'Mínimo 6 caracteres';
+                            return context.tr('Minimum 6 characters');
                           }
                           return null;
                         },
@@ -260,7 +261,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                       const SizedBox(height: 12),
                       _field(
                         controller: _confirmNewPasswordController,
-                        label: 'Confirmar nueva contraseña',
+                        label: context.tr('Confirm new password'),
                         icon: Icons.lock_reset,
                         obscureText: _obscureConfirm,
                         suffix: IconButton(
@@ -278,7 +279,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                         validator: (value) {
                           if (_newPasswordController.text.isNotEmpty &&
                               value != _newPasswordController.text) {
-                            return 'Las contraseñas no coinciden';
+                            return context.tr('Passwords do not match');
                           }
                           return null;
                         },
@@ -300,13 +301,13 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text('Guardar cambios'),
+                            : Text(context.tr('Save Changes')),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: _logout,
                         icon: const Icon(Icons.logout),
-                        label: const Text('Cerrar sesión'),
+                        label: Text(context.tr('Log out')),
                       ),
                       const SizedBox(height: 24),
                       _buildLanguageSection(),
@@ -359,17 +360,17 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.language,
                 color: Color(0xFF1D6A7B),
                 size: 22,
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Text(
-                'Idioma',
-                style: TextStyle(
+                context.tr('Language'),
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF17324D),
@@ -397,14 +398,14 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
               isExpanded: true,
               underline: const SizedBox(),
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              items: const [
+              items: [
                 DropdownMenuItem(
                   value: 'es',
-                  child: Text('Español'),
+                  child: Text(context.tr('Español')),
                 ),
                 DropdownMenuItem(
                   value: 'en',
-                  child: Text('English'),
+                  child: Text(context.tr('English')),
                 ),
               ],
             ),

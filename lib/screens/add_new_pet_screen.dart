@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
 import 'home_screen.dart';
@@ -190,9 +191,9 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
-                const Text(
-                  'Choose Avatar',
-                  style: TextStyle(
+                Text(
+                  context.tr('Choose Avatar'),
+                  style: const TextStyle(
                     color: _textMain,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -283,7 +284,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
     if (name.isEmpty || breed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter pet name and breed.')),
+        SnackBar(content: Text(context.tr('Please enter pet name and breed.'))),
       );
       return;
     }
@@ -321,7 +322,9 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isEditMode ? 'Pet updated successfully.' : 'Pet added successfully.',
+            _isEditMode
+                ? context.tr('Pet updated successfully.')
+                : context.tr('Pet added successfully.'),
           ),
         ),
       );
@@ -341,7 +344,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save pet. Please try again.')),
+        SnackBar(content: Text(context.tr('Could not save pet. Please try again.'))),
       );
     } finally {
       if (mounted) {
@@ -407,8 +410,8 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          _isEditMode ? 'Edit Pet' : 'AddNewPet',
-                          style: TextStyle(
+                          _isEditMode ? context.tr('Edit Pet') : context.tr('Add New Pet'),
+                          style: const TextStyle(
                             color: Color(0xFF9DC7FF),
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -482,7 +485,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Avatar: ${resolvePetAvatar(_selectedAvatarId).label}',
+                          '${context.tr('Avatar')}: ${resolvePetAvatar(_selectedAvatarId).label}',
                           style: const TextStyle(
                             color: _textMuted,
                             fontSize: 13,
@@ -491,25 +494,25 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 18),
                         _FieldCard(
-                          label: 'PET NAME',
+                          label: context.tr('PET NAME'),
                           child: TextField(
                             controller: _nameController,
                             style: const TextStyle(color: _textMain, fontSize: 18),
-                            decoration: const InputDecoration(
-                              hintText: 'e.g. Luna',
+                            decoration: InputDecoration(
+                              hintText: context.tr('e.g. Luna'),
                               hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
                             ),
                           ),
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'BREED',
+                          label: context.tr('BREED'),
                           child: TextField(
                             controller: _breedController,
                             style: const TextStyle(color: _textMain, fontSize: 18),
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search, color: _primary),
-                              hintText: 'Search breed...',
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search, color: _primary),
+                              hintText: context.tr('Search breed...'),
                               hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
                             ),
                           ),
@@ -535,7 +538,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        'Male',
+                                        context.tr('Male'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: _isMale ? Colors.white : _textMuted,
@@ -557,7 +560,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        'Female',
+                                        context.tr('Female'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: !_isMale ? Colors.white : _textMuted,
@@ -574,7 +577,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'DATE OF BIRTH',
+                          label: context.tr('DATE OF BIRTH'),
                           child: InkWell(
                             onTap: _pickBirthDate,
                             borderRadius: BorderRadius.circular(14),
@@ -598,7 +601,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'WEIGHT',
+                          label: context.tr('WEIGHT'),
                           trailing: Container(
                             padding: const EdgeInsets.all(3),
                             decoration: BoxDecoration(
@@ -634,14 +637,14 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'BIO & MEDICAL NOTES',
+                          label: context.tr('BIO & MEDICAL NOTES'),
                           child: TextField(
                             controller: _notesController,
                             minLines: 4,
                             maxLines: 5,
                             style: const TextStyle(color: _textMain, fontSize: 17),
-                            decoration: const InputDecoration(
-                              hintText: 'Tell us about your pet\'s favorites, allergies, or habits...',
+                            decoration: InputDecoration(
+                              hintText: context.tr('Tell us about your pet\'s favorites, allergies, or habits...'),
                               hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 17),
                             ),
                           ),
@@ -685,8 +688,8 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                 : const Icon(Icons.pets),
                             label: Text(
                               _isSaving
-                                  ? 'Saving...'
-                                  : (_isEditMode ? 'Update Pet' : 'Add Pet'),
+                                  ? context.tr('Saving...')
+                                  : (_isEditMode ? context.tr('Update Pet') : context.tr('Add Pet')),
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,
@@ -696,10 +699,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'By adding a pet, you can start sharing care schedules with your family members.',
+                        Text(
+                          context.tr('By adding a pet, you can start sharing care schedules with your family members.'),
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: _textMuted, fontSize: 14, height: 1.45),
+                          style: const TextStyle(color: _textMuted, fontSize: 14, height: 1.45),
                         ),
                         const SizedBox(height: 14),
                       ],
@@ -831,25 +834,25 @@ class _BottomTabs extends StatelessWidget {
         children: [
           _NavTab(
             icon: Icons.home_filled,
-            label: 'Home',
+            label: context.tr('HOME'),
             selected: selectedIndex == 0,
             onTap: () => onTap(0),
           ),
           _NavTab(
             icon: Icons.calendar_today,
-            label: 'Calendar',
+            label: context.tr('CALENDAR'),
             selected: selectedIndex == 1,
             onTap: () => onTap(1),
           ),
           _NavTab(
             icon: Icons.groups,
-            label: 'Family',
+            label: context.tr('FAMILY'),
             selected: selectedIndex == 2,
             onTap: () => onTap(2),
           ),
           _NavTab(
             icon: Icons.person,
-            label: 'Profile',
+            label: context.tr('PROFILE'),
             selected: selectedIndex == 3,
             onTap: () => onTap(3),
           ),
@@ -893,7 +896,7 @@ class _NavTab extends StatelessWidget {
               Icon(icon, color: fg, size: 20),
               const SizedBox(height: 4),
               Text(
-                label,
+                context.tr(label),
                 style: TextStyle(
                   color: fg,
                   fontSize: 11,

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 
@@ -63,8 +64,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (!_acceptedTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes aceptar los terminos para continuar.'),
+        SnackBar(
+          content: Text(context.tr('Debes aceptar los terminos para continuar.')),
         ),
       );
       return;
@@ -89,9 +90,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (user != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Cuenta creada. Verifica tu correo y luego inicia sesión.',
+              context.tr('Cuenta creada. Verifica tu correo y luego inicia sesión.'),
             ),
           ),
         );
@@ -116,7 +117,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not complete sign up.')),
+          SnackBar(content: Text(context.tr('Could not complete sign up.'))),
       );
     } finally {
       if (mounted) {
@@ -298,7 +299,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             },
                           ),
                           const SizedBox(height: 14),
-                          _buildFieldLabel('PASSWORD'),
+                          _buildFieldLabel(context.tr('PASSWORD')),
                           const SizedBox(height: 8),
                           _buildInput(
                             controller: _passwordController,
@@ -482,7 +483,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.only(top: 12),
                                   child: RichText(
-                                    text: const TextSpan(
+                                    text: TextSpan(
                                       style: TextStyle(
                                         color: _muted,
                                         fontSize: 15,
@@ -490,17 +491,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         height: 1.3,
                                       ),
                                       children: [
-                                        TextSpan(text: 'I agree to the '),
+                                        TextSpan(text: context.tr('I agree to the ')),
                                         TextSpan(
-                                          text: 'Terms of Service',
+                                          text: context.tr('Terms of Service'),
                                           style: TextStyle(
                                             color: Color(0xFF8DC0FF),
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                        TextSpan(text: ' and '),
+                                        TextSpan(text: context.tr(' and ')),
                                         TextSpan(
-                                          text: 'Privacy Policy',
+                                          text: context.tr('Privacy Policy'),
                                           style: TextStyle(
                                             color: Color(0xFF8DC0FF),
                                             fontWeight: FontWeight.w700,
@@ -558,7 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         color: Color(0xFF0E2C52),
                                       ),
                                     )
-                                  : const Text('Register'),
+                                  : Text(context.tr('Register')),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -673,7 +674,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   InputDecoration _dropdownDecoration() {
     return InputDecoration(
-      hintText: 'Select',
+      hintText: context.tr('Select'),
       hintStyle: const TextStyle(
         color: Color(0xFF76829A),
         fontWeight: FontWeight.w500,

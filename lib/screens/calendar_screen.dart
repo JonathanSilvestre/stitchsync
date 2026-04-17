@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/event_service.dart';
 import 'new_event_screen.dart';
 
@@ -78,15 +79,16 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
 
   String get _selectedPetName {
     final name = widget.selectedPetName?.trim();
-    return name != null && name.isNotEmpty ? name : 'Pet';
+    return name != null && name.isNotEmpty ? name : context.tr('Pet');
   }
 
-  String _monthLabel(DateTime month) {
-    return '${_monthNames[month.month - 1]} ${month.year}';
+  String _monthLabel(BuildContext context, DateTime month) {
+    return '${context.tr(_monthNames[month.month - 1])} ${month.year}';
   }
 
-  String _monthShort(DateTime month) {
-    return _monthNames[month.month - 1].substring(0, 3);
+  String _monthShort(BuildContext context, DateTime month) {
+    final fullMonth = context.tr(_monthNames[month.month - 1]);
+    return fullMonth.length <= 3 ? fullMonth : fullMonth.substring(0, 3);
   }
 
   bool _sameDay(DateTime a, DateTime b) {
@@ -124,15 +126,15 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   String _eventLocation(Map<String, dynamic> data) {
     final category = (data['category'] as String?)?.trim();
     if (category != null && category.isNotEmpty) {
-      return 'Category: ${category[0].toUpperCase()}${category.substring(1)}';
+      return '${context.tr('Category')}: ${category[0].toUpperCase()}${category.substring(1)}';
     }
-    return 'Scheduled activity';
+    return context.tr('Scheduled activity');
   }
 
   String _detailLines(String text) {
     final normalized = text.replaceAll('\n', ' ').trim();
     if (normalized.isEmpty) {
-      return 'No data';
+      return context.tr('No data');
     }
 
     final words = normalized.split(RegExp(r'\s+'));
@@ -284,9 +286,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                   width: double.infinity,
                   child: TextButton(
                     onPressed: () => Navigator.pop(sheetContext, false),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
+                    child: Text(
+                      context.tr('Cancel'),
+                      style: const TextStyle(
                         color: Color(0xFFA3AAC4),
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -311,7 +313,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   }) async {
     final shouldDelete = await _confirmDelete(
       title: title,
-      actionLabel: 'Delete Event',
+      actionLabel: context.tr('Delete Event'),
     );
 
     if (!shouldDelete) return;
@@ -320,12 +322,12 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
       await _eventService.deleteEvent(familyId: familyId, eventId: eventId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Evento eliminado.')),
+        SnackBar(content: Text(context.tr('Event deleted.'))),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete event.')),
+        SnackBar(content: Text(context.tr('Could not delete event.'))),
       );
     }
   }
@@ -337,7 +339,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   }) async {
     final shouldDelete = await _confirmDelete(
       title: title,
-      actionLabel: 'Delete Full Series',
+      actionLabel: context.tr('Delete Full Series'),
     );
 
     if (!shouldDelete) return;
@@ -346,12 +348,12 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
       await _eventService.deleteSeries(familyId: familyId, seriesId: seriesId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Serie eliminada.')),
+        SnackBar(content: Text(context.tr('Series deleted.'))),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete series.')),
+        SnackBar(content: Text(context.tr('Could not delete series.'))),
       );
     }
   }
@@ -371,14 +373,16 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            completed ? 'Evento marcado como realizado.' : 'Evento marcado como pendiente.',
+            completed
+                ? context.tr('Event marked as completed.')
+                : context.tr('Event marked as pending.'),
           ),
         ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not update event status.')),
+        SnackBar(content: Text(context.tr('Could not update event status.'))),
       );
     }
   }
@@ -423,9 +427,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'edit'),
                     icon: const Icon(Icons.edit_outlined, color: Color(0xFF74B1FF)),
-                    label: const Text(
-                      'Edit Event',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Edit Event'),
+                      style: const TextStyle(
                         color: Color(0xFFDEE5FF),
                         fontWeight: FontWeight.w700,
                       ),
@@ -443,7 +447,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                       color: const Color(0xFF95DEBA),
                     ),
                     label: Text(
-                      isCompleted ? 'Mark as Pending' : 'Complete Event',
+                      isCompleted
+                          ? context.tr('Mark as Pending')
+                          : context.tr('Complete Event'),
                       style: const TextStyle(
                         color: Color(0xFF95DEBA),
                         fontWeight: FontWeight.w700,
@@ -456,9 +462,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'delete_one'),
                     icon: const Icon(Icons.delete_outline, color: Color(0xFFFF8E8E)),
-                    label: const Text(
-                      'Delete Event',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Delete Event'),
+                      style: const TextStyle(
                         color: Color(0xFFFF8E8E),
                         fontWeight: FontWeight.w700,
                       ),
@@ -471,9 +477,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                     child: TextButton.icon(
                       onPressed: () => Navigator.pop(sheetContext, 'delete_series'),
                       icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF8E8E)),
-                      label: const Text(
-                        'Delete Full Series',
-                        style: TextStyle(
+                      label: Text(
+                        context.tr('Delete Full Series'),
+                        style: const TextStyle(
                           color: Color(0xFFFF8E8E),
                           fontWeight: FontWeight.w700,
                         ),
@@ -536,8 +542,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
 
     if (familyId == null || familyId.trim().isEmpty) {
       return _CalendarContent(
-        monthLabel: _monthLabel(_visibleMonth),
-        eventsTitle: 'Events for ${_monthShort(_selectedDay)} ${_selectedDay.day}',
+        monthLabel: _monthLabel(context, _visibleMonth),
+        eventsTitle: '${context.tr('Events for')} ${_monthShort(context, _selectedDay)} ${_selectedDay.day}',
         canGoPrev: false,
         canGoNext: false,
         onPrevMonth: null,
@@ -551,8 +557,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
             _selectedDay = day;
           });
         },
-        upcomingDetail: 'No upcoming\nevents',
-        reminderDetail: 'No\nreminders',
+        upcomingDetail: '${context.tr('No upcoming')}\n${context.tr('events')}',
+        reminderDetail: '${context.tr('No')}\n${context.tr('reminders')}',
         upcomingIcon: Icons.event,
         upcomingIconBg: const Color(0xFF0B2A5D),
         upcomingIconColor: const Color(0xFF74B1FF),
@@ -560,13 +566,13 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
         reminderIconBg: const Color(0xFF0B2A5D),
         reminderIconColor: const Color(0xFF74B1FF),
         proTipText: _randomProTip,
-        eventCards: const [
+        eventCards: [
           _EventCard(
-            accent: Color(0xFF74B1FF),
+            accent: const Color(0xFF74B1FF),
             timeTop: '--:--',
             timeBottom: '--',
-            title: 'No events yet',
-            location: 'Create your first event',
+            title: context.tr('No events yet'),
+            location: context.tr('Create your first event'),
             note: null,
             chip: null,
             avatars: false,
@@ -629,8 +635,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
         final reminderEvent = todayImportant.isNotEmpty ? todayImportant.first : null;
 
         final upcomingTitle = upcomingEvent != null
-            ? (upcomingEvent.doc.data()['title'] as String?)?.trim() ?? 'Next event'
-            : 'No upcoming events';
+          ? (upcomingEvent.doc.data()['title'] as String?)?.trim() ?? context.tr('Next event')
+          : context.tr('No upcoming events');
 
         final upcomingCategory =
             upcomingEvent != null ? ((upcomingEvent.doc.data()['category'] as String?) ?? '') : '';
@@ -641,8 +647,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
         final upcomingPalette = _iconPalette(upcomingIcon);
 
         final reminderTitle = reminderEvent != null
-            ? (reminderEvent.doc.data()['title'] as String?)?.trim() ?? 'No important event today'
-            : 'No important event today';
+          ? (reminderEvent.doc.data()['title'] as String?)?.trim() ?? context.tr('No important event today')
+          : context.tr('No important event today');
 
         IconData reminderIcon = Icons.notifications_none_rounded;
         ({Color bg, Color fg}) reminderPalette =
@@ -654,13 +660,13 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
         }
 
         final eventCards = selectedEvents.isEmpty
-            ? const <Widget>[
+            ? <Widget>[
                 _EventCard(
-                  accent: Color(0xFF74B1FF),
+                  accent: const Color(0xFF74B1FF),
                   timeTop: '--:--',
                   timeBottom: '--',
-                  title: 'No events for this day',
-                  location: 'Pick another date or create a new event',
+                  title: context.tr('No events for this day'),
+                  location: context.tr('Pick another date or create a new event'),
                   note: null,
                   chip: null,
                   avatars: false,
@@ -670,19 +676,19 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                 final data = item.doc.data();
                 final title = (data['title'] as String?)?.trim().isNotEmpty == true
                     ? '${(data['title'] as String).trim()} • $_selectedPetName'
-                    : 'Event • $_selectedPetName';
+                  : '${context.tr('Event')} • $_selectedPetName';
                 final note = (data['note'] as String?)?.trim();
                 final category = (data['category'] as String?)?.trim();
                 final completed = (data['completed'] as bool?) ?? false;
                 final completedBy = (data['completed_by_username'] as String?)?.trim();
                 final chip =
                   completed
-                    ? 'DONE'
+                    ? context.tr('DONE')
                     : (category != null && category.isNotEmpty ? category.toUpperCase() : null);
 
                 final baseNote = note != null && note.isNotEmpty ? note : null;
                 final completionNote = completed
-                  ? 'Completed by ${completedBy?.isNotEmpty == true ? completedBy : 'a family member'}'
+                  ? '${context.tr('Completed by')} ${completedBy?.isNotEmpty == true ? completedBy : context.tr('a family member')}'
                   : null;
                 final combinedNote = baseNote != null && completionNote != null
                   ? '$baseNote\n$completionNote'
@@ -692,7 +698,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                   accent: const Color(0xFF74B1FF),
                   timeTop: _eventTimeTop(item.when),
                   timeBottom: _eventTimeBottom(item.when),
-                  title: completed ? 'Completed: $title' : title,
+                  title: completed ? '${context.tr('Completed')}: $title' : title,
                   location: _eventLocation(data),
                   note: combinedNote,
                   chip: chip,
@@ -707,8 +713,8 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
               }).toList(growable: false);
 
         return _CalendarContent(
-          monthLabel: _monthLabel(_visibleMonth),
-          eventsTitle: 'Events for ${_monthShort(_selectedDay)} ${_selectedDay.day}',
+          monthLabel: _monthLabel(context, _visibleMonth),
+          eventsTitle: '${context.tr('Events for')} ${_monthShort(context, _selectedDay)} ${_selectedDay.day}',
           canGoPrev: !_sameMonth(_visibleMonth, _minMonth),
           canGoNext: !_sameMonth(_visibleMonth, _maxMonth),
           onPrevMonth: () => _changeMonth(-1),
@@ -829,9 +835,9 @@ class _CalendarContent extends StatelessWidget {
               children: [
                 const _CalendarTopBar(),
                 const SizedBox(height: 26),
-                const Text(
-                  'YOUR SCHEDULE',
-                  style: TextStyle(
+                Text(
+                  context.tr('YOUR SCHEDULE'),
+                  style: const TextStyle(
                     color: Color(0xFF8AA8D8),
                     fontSize: 14,
                     letterSpacing: 2.2,
@@ -886,7 +892,7 @@ class _CalendarContent extends StatelessWidget {
                         icon: upcomingIcon,
                         iconBg: upcomingIconBg,
                         iconColor: upcomingIconColor,
-                        title: 'UPCOMING\nMILESTONE',
+                        title: context.tr('UPCOMING\nMILESTONE'),
                         detail: upcomingDetail,
                       ),
                     ),
@@ -896,7 +902,7 @@ class _CalendarContent extends StatelessWidget {
                         icon: reminderIcon,
                         iconBg: reminderIconBg,
                         iconColor: reminderIconColor,
-                        title: 'REMINDER',
+                        title: context.tr('REMINDER'),
                         detail: reminderDetail,
                       ),
                     ),
@@ -941,7 +947,7 @@ class _CalendarContent extends StatelessWidget {
                           ),
                         ),
                         icon: const Icon(Icons.add, size: 20),
-                        label: const Text('New Event'),
+                        label: Text(context.tr('New Event')),
                       ),
                     );
 
@@ -985,9 +991,9 @@ class _CalendarContent extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Pro Tip',
-                        style: TextStyle(
+                      Text(
+                        context.tr('Pro Tip'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 27,
                           fontWeight: FontWeight.w700,
@@ -996,7 +1002,7 @@ class _CalendarContent extends StatelessWidget {
                       ),
                       SizedBox(height: 10),
                       Text(
-                        proTipText,
+                        context.tr(proTipText),
                         style: const TextStyle(
                           color: _textMuted,
                           fontSize: 17,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/family_service.dart';
@@ -174,15 +175,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 _QuickActionTile(
                   icon: Icons.event_rounded,
-                  title: 'Add Event',
-                  subtitle: 'Create a new schedule item',
+                  title: context.tr('Add Event'),
+                  subtitle: context.tr('Create a new schedule item'),
                   onTap: () => Navigator.pop(sheetContext, 'add_event'),
                 ),
                 const SizedBox(height: 10),
                 _QuickActionTile(
                   icon: Icons.pets_rounded,
-                  title: 'Change Pet',
-                  subtitle: 'Switch the active companion',
+                  title: context.tr('Change Pet'),
+                  subtitle: context.tr('Switch the active companion'),
                   onTap: () => Navigator.pop(sheetContext, 'change_pet'),
                 ),
               ],
@@ -218,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (pets.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pets available yet')),
+        SnackBar(content: Text(context.tr('No pets available yet'))),
       );
       return;
     }
@@ -243,10 +244,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Change Pet',
-                        style: TextStyle(
+                        context.tr('Change Pet'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
@@ -260,15 +261,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'Pick your active pet for the home dashboard.',
-                  style: TextStyle(color: _textMuted),
+                Text(
+                  context.tr('Pick your active pet for the home dashboard.'),
+                  style: const TextStyle(color: _textMuted),
                 ),
                 const SizedBox(height: 14),
                 ...pets.map((petDoc) {
                   final petData = petDoc.data();
-                  final name = (petData['name'] as String?) ?? 'Pet';
-                  final breed = (petData['breed'] as String?) ?? 'Unknown';
+                  final name = (petData['name'] as String?) ?? context.tr('Pet');
+                  final breed = (petData['breed'] as String?) ?? context.tr('Unknown');
                   final photoUrl = (petData['photo_url'] as String?) ?? '';
                   final avatarId = (petData['avatar_id'] as String?) ?? '';
                   final isSelected = petDoc.id == _selectedPetId;
@@ -536,14 +537,16 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            completed ? 'Evento marcado como realizado.' : 'Evento marcado como pendiente.',
+            completed
+                ? context.tr('Event marked as completed.')
+                : context.tr('Event marked as pending.'),
           ),
         ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not update event status.')),
+        SnackBar(content: Text(context.tr('Could not update event status.'))),
       );
     }
   }
@@ -555,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     final shouldDelete = await _confirmDelete(
       title: title,
-      actionLabel: 'Delete Event',
+      actionLabel: context.tr('Delete Event'),
     );
     if (!shouldDelete) return;
 
@@ -563,12 +566,12 @@ class _HomeScreenState extends State<HomeScreen> {
       await _eventService.deleteEvent(familyId: familyId, eventId: eventId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Evento eliminado.')),
+        SnackBar(content: Text(context.tr('Event deleted.'))),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete event.')),
+        SnackBar(content: Text(context.tr('Could not delete event.'))),
       );
     }
   }
@@ -580,7 +583,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     final shouldDelete = await _confirmDelete(
       title: title,
-      actionLabel: 'Delete Full Series',
+      actionLabel: context.tr('Delete Full Series'),
     );
     if (!shouldDelete) return;
 
@@ -588,12 +591,12 @@ class _HomeScreenState extends State<HomeScreen> {
       await _eventService.deleteSeries(familyId: familyId, seriesId: seriesId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Serie eliminada.')),
+        SnackBar(content: Text(context.tr('Series deleted.'))),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete series.')),
+        SnackBar(content: Text(context.tr('Could not delete series.'))),
       );
     }
   }
@@ -638,9 +641,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'edit'),
                     icon: const Icon(Icons.edit_outlined, color: _primary),
-                    label: const Text(
-                      'Edit Event',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Edit Event'),
+                      style: const TextStyle(
                         color: _textMain,
                         fontWeight: FontWeight.w700,
                       ),
@@ -658,7 +661,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: const Color(0xFF95DEBA),
                     ),
                     label: Text(
-                      isCompleted ? 'Mark as Pending' : 'Complete Event',
+                      isCompleted
+                          ? context.tr('Mark as Pending')
+                          : context.tr('Complete Event'),
                       style: const TextStyle(
                         color: Color(0xFF95DEBA),
                         fontWeight: FontWeight.w700,
@@ -671,9 +676,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.pop(sheetContext, 'delete_one'),
                     icon: const Icon(Icons.delete_outline, color: Color(0xFFFF8E8E)),
-                    label: const Text(
-                      'Delete Event',
-                      style: TextStyle(
+                    label: Text(
+                      context.tr('Delete Event'),
+                      style: const TextStyle(
                         color: Color(0xFFFF8E8E),
                         fontWeight: FontWeight.w700,
                       ),
@@ -686,9 +691,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: TextButton.icon(
                       onPressed: () => Navigator.pop(sheetContext, 'delete_series'),
                       icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFFF8E8E)),
-                      label: const Text(
-                        'Delete Full Series',
-                        style: TextStyle(
+                      label: Text(
+                        context.tr('Delete Full Series'),
+                        style: const TextStyle(
                           color: Color(0xFFFF8E8E),
                           fontWeight: FontWeight.w700,
                         ),
@@ -762,13 +767,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final selectedName = hasPets
       ? ((selectedData['name'] as String?)?.trim().isNotEmpty == true
         ? (selectedData['name'] as String).trim()
-        : 'Tu mascota')
-      : 'No pets yet';
+        : context.tr('Your pet'))
+      : context.tr('No pets yet');
     final selectedBreed = hasPets
       ? ((selectedData['breed'] as String?)?.trim().isNotEmpty == true
         ? (selectedData['breed'] as String).trim()
-        : 'Unknown breed')
-      : 'Esta familia aún no tiene mascotas';
+        : context.tr('Unknown breed'))
+      : context.tr('This family has no pets yet');
     final selectedPhoto = hasPets ? (selectedData['photo_url'] as String?) ?? '' : '';
     final selectedAvatarId = hasPets ? (selectedData['avatar_id'] as String?) ?? '' : '';
 
@@ -813,7 +818,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Good morning, $_username',
+                        '${context.tr('Good morning')}, $_username',
                         style: const TextStyle(
                           color: _textMuted,
                           fontSize: 18,
@@ -821,9 +826,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Everything\'s ready for\nyour companion today.',
-                        style: TextStyle(
+                      Text(
+                        context.tr('Everything\'s ready for your companion today.'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 48,
                           height: 1.05,
@@ -847,9 +852,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'Today\'s Schedule',
-                            style: TextStyle(
+                          Text(
+                            context.tr('Today\'s Schedule'),
+                            style: const TextStyle(
                               color: _textMain,
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
@@ -861,9 +866,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _currentIndex = 1;
                               });
                             },
-                            child: const Text(
-                              'See all',
-                              style: TextStyle(
+                            child: Text(
+                              context.tr('See all'),
+                              style: const TextStyle(
                                 color: Color(0xFFA3AAC4),
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
@@ -880,14 +885,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: _surfaceHigh,
                             borderRadius: BorderRadius.circular(22),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
-                              Icon(Icons.event_available, color: _primary, size: 30),
-                              SizedBox(width: 12),
+                              const Icon(Icons.event_available, color: _primary, size: 30),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'No events for today yet.',
-                                  style: TextStyle(
+                                  context.tr('No events for today yet.'),
+                                  style: const TextStyle(
                                     color: _textMain,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -931,7 +936,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             final data = eventDoc.data();
                             final title = (data['title'] as String?)?.trim().isNotEmpty == true
                                 ? (data['title'] as String).trim()
-                                : 'Untitled event';
+                              : context.tr('Untitled event');
                             final note = (data['note'] as String?)?.trim() ?? '';
                             final completed = (data['completed'] as bool?) ?? false;
                             final completedByUsername =
@@ -945,10 +950,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             final baseSubtitle = note.isNotEmpty
                                 ? '${_formatTimeLabel(timestamp)} • $note'
-                                : 'Today at ${_formatTimeLabel(timestamp)}';
+                              : '${context.tr('Today at')} ${_formatTimeLabel(timestamp)}';
 
                             final subtitle = completed
-                                ? '$baseSubtitle\nCompleted by ${completedByUsername?.isNotEmpty == true ? completedByUsername : 'a family member'}'
+                              ? '$baseSubtitle\n${context.tr('Completed by')} ${completedByUsername?.isNotEmpty == true ? completedByUsername : context.tr('a family member')}'
                                 : baseSubtitle;
 
                             return Padding(
@@ -957,7 +962,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 icon: icon,
                                 iconBg: palette.bg,
                                 iconColor: palette.fg,
-                                title: completed ? 'Completed: $title' : title,
+                                title: completed ? '${context.tr('Completed')}: $title' : title,
                                 subtitle: subtitle,
                                 completed: completed,
                                 onMoreTap: () => _openHomeEventActions(
@@ -1139,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (families.isEmpty) {
             return Center(
               child: Text(
-                'Create a family to start managing pets',
+                context.tr('Create a family to start managing pets'),
                 style: TextStyle(color: _textMuted.withValues(alpha: 0.9)),
               ),
             );
@@ -1407,9 +1412,9 @@ class _DogHeroCard extends StatelessWidget {
                         color: const Color(0xFFBAECCB),
                         borderRadius: BorderRadius.circular(99),
                       ),
-                      child: const Text(
-                        'AT HOME',
-                        style: TextStyle(
+                      child: Text(
+                        context.tr('AT HOME'),
+                        style: const TextStyle(
                           color: Color(0xFF24553F),
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
@@ -1425,7 +1430,7 @@ class _DogHeroCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Current Pet: $petName',
+                          '${context.tr('Current Pet')}: $petName',
                           style: const TextStyle(
                             color: Color(0xFFDEE5FF),
                             fontSize: 23,
@@ -1492,9 +1497,9 @@ class _DogHeroCard extends StatelessWidget {
               const Spacer(),
               GestureDetector(
                 onTap: onViewDetails,
-                child: const Text(
-                  'View Details',
-                  style: TextStyle(
+                child: Text(
+                  context.tr('View Details'),
+                  style: const TextStyle(
                     color: Color(0xFF74B1FF),
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -1650,25 +1655,25 @@ class _BottomNavBar extends StatelessWidget {
         children: [
           _NavItem(
             icon: Icons.home,
-            label: 'Home',
+            label: context.tr('HOME'),
             selected: currentIndex == 0,
             onTap: () => onTap(0),
           ),
           _NavItem(
             icon: Icons.calendar_month,
-            label: 'Calendar',
+            label: context.tr('CALENDAR'),
             selected: currentIndex == 1,
             onTap: () => onTap(1),
           ),
           _NavItem(
             icon: Icons.groups,
-            label: 'Family',
+            label: context.tr('FAMILY'),
             selected: currentIndex == 2,
             onTap: () => onTap(2),
           ),
           _NavItem(
             icon: Icons.person,
-            label: 'Profile',
+            label: context.tr('PROFILE'),
             selected: currentIndex == 3,
             onTap: () => onTap(3),
           ),
@@ -1713,7 +1718,7 @@ class _NavItem extends StatelessWidget {
                 Icon(icon, color: fg, size: 24),
                 const SizedBox(height: 4),
                 Text(
-                  label,
+                  context.tr(label),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

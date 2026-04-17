@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 import '../utils/user_avatar_catalog.dart';
 
@@ -85,7 +86,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error loading profile')),
+          SnackBar(content: Text(context.tr('Error loading profile'))),
         );
       }
     }
@@ -119,7 +120,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (!usernameChanged && !wantsPasswordChange && !languageChanged && !avatarChanged) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No changes to save.')),
+            SnackBar(content: Text(context.tr('No changes to save.'))),
           );
         }
         return;
@@ -151,7 +152,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Changes saved successfully')),
+          SnackBar(content: Text(context.tr('Changes saved successfully'))),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -163,7 +164,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(content: Text('${context.tr('Error')}: ${e.toString()}')),
         );
       }
     } finally {
@@ -323,10 +324,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               icon: const Icon(Icons.arrow_back,
                                   color: _textMain, size: 24),
                             ),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Settings',
-                                style: TextStyle(
+                                context.tr('Settings'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 28,
                                   fontWeight: FontWeight.w700,
@@ -446,9 +447,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Text(
-              'Security',
-              style: TextStyle(
+            Text(
+              context.tr('Security'),
+              style: const TextStyle(
                 color: _textMain,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -467,7 +468,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildPasswordField(
-                label: 'CURRENT PASSWORD',
+                label: context.tr('CURRENT PASSWORD'),
                 controller: _currentPasswordController,
                 hint: '••••••••••••',
                 obscureText: _obscureCurrent,
@@ -479,9 +480,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               ),
               const SizedBox(height: 16),
               _buildPasswordField(
-                label: 'NEW PASSWORD',
+                label: context.tr('NEW PASSWORD'),
                 controller: _newPasswordController,
-                hint: 'Min. 8 characters',
+                hint: context.tr('Min. 8 characters'),
                 obscureText: _obscureNew,
                 onToggleObscure: () {
                   setState(() {
@@ -491,9 +492,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               ),
               const SizedBox(height: 16),
               _buildPasswordField(
-                label: 'CONFIRM NEW PASSWORD',
+                label: context.tr('CONFIRM NEW PASSWORD'),
                 controller: _confirmNewPasswordController,
-                hint: 'Repeat new password',
+                hint: context.tr('Repeat new password'),
                 obscureText: _obscureConfirm,
                 onToggleObscure: () {
                   setState(() {
@@ -566,9 +567,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Account Settings',
-          style: TextStyle(
+        Text(
+          context.tr('Account Settings'),
+          style: const TextStyle(
             color: _textMain,
             fontSize: 28,
             fontWeight: FontWeight.w700,
@@ -576,9 +577,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Manage your personal information',
-          style: TextStyle(
+        Text(
+          context.tr('Manage your personal information'),
+          style: const TextStyle(
             color: _textMuted,
             fontSize: 14,
             height: 1.5,
@@ -610,9 +611,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Profile Information',
-                    style: TextStyle(
+                  Text(
+                    context.tr('Profile Information'),
+                    style: const TextStyle(
                       color: _textMain,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -622,13 +623,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               ),
               const SizedBox(height: 20),
               _buildTextField(
-                label: 'USERNAME',
+                label: context.tr('USERNAME'),
                 controller: _usernameController,
                 hint: 'Enter your username',
               ),
               const SizedBox(height: 16),
               _buildTextField(
-                label: 'EMAIL ADDRESS',
+                label: context.tr('EMAIL ADDRESS'),
                 controller: _emailController,
                 hint: 'Email address',
                 enabled: false,
@@ -646,9 +647,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'LANGUAGE',
-          style: TextStyle(
+        Text(
+          context.tr('LANGUAGE'),
+          style: const TextStyle(
             color: _textMuted,
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -672,14 +673,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 color: _textMain,
                 fontSize: 14,
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
                   value: 'en',
-                  child: Text('English'),
+                  child: Text(context.tr('English')),
                 ),
                 DropdownMenuItem(
                   value: 'es',
-                  child: Text('Español'),
+                  child: Text(context.tr('Español')),
                 ),
               ],
               onChanged: (value) {
@@ -766,14 +767,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   valueColor: AlwaysStoppedAnimation<Color>(_bg),
                 ),
               )
-            : const Row(
+            : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.save, size: 20, color: _bg),
-                  SizedBox(width: 12),
+                  const Icon(Icons.save, size: 20, color: _bg),
+                  const SizedBox(width: 12),
                   Text(
-                    'Save Changes',
-                    style: TextStyle(
+                    context.tr('Save Changes'),
+                    style: const TextStyle(
                       color: _bg,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,

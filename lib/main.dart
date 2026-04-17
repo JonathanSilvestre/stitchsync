@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
@@ -57,8 +59,44 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        final user = authSnapshot.data;
+
+        if (user == null) {
+          return _buildAppWithLocale(const Locale('en'));
+        }
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .snapshots(),
+          builder: (context, profileSnapshot) {
+            final data = profileSnapshot.data?.data();
+            final language = ((data?['language'] as String?) ?? 'en').toLowerCase();
+            final locale = language == 'es' ? const Locale('es') : const Locale('en');
+            return _buildAppWithLocale(locale);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAppWithLocale(Locale locale) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      locale: locale,
+      supportedLocales: const [
+        Locale('en'),
+        Locale('es'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: const SplashScreen(),
     );
   }

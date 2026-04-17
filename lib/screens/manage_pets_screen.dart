@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
@@ -34,22 +35,22 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: _surfaceHigh,
-          title: const Text(
-            'Delete Pet',
-            style: TextStyle(color: _textMain, fontWeight: FontWeight.bold),
+          title: Text(
+            context.tr('Delete Pet'),
+            style: const TextStyle(color: _textMain, fontWeight: FontWeight.bold),
           ),
           content: Text(
-            'Are you sure you want to delete $petName?',
+            '${context.tr('Are you sure you want to delete')} $petName?',
             style: const TextStyle(color: _textMuted),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel', style: TextStyle(color: _primary)),
+              child: Text(context.tr('Cancel'), style: const TextStyle(color: _primary)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Delete', style: TextStyle(color: Color(0xFFD32F2F))),
+              child: Text(context.tr('Delete'), style: const TextStyle(color: Color(0xFFD32F2F))),
             ),
           ],
         );
@@ -95,7 +96,7 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
             backgroundColor: _bg,
             body: Center(
               child: Text(
-                'No family found',
+                context.tr('No family found.'),
                 style: TextStyle(color: _textMuted, fontSize: 16),
               ),
             ),
@@ -153,10 +154,10 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                 onPressed: () => Navigator.pop(context),
                                 icon: const Icon(Icons.arrow_back, color: _textMain, size: 24),
                               ),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
-                                  'Manage Pets',
-                                  style: TextStyle(
+                                  context.tr('Manage Pets'),
+                                  style: const TextStyle(
                                     color: _textMain,
                                     fontSize: 28,
                                     fontWeight: FontWeight.w700,
@@ -175,9 +176,9 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Your Furry Family',
-                                  style: TextStyle(
+                                Text(
+                                  context.tr('Your Furry Family'),
+                                  style: const TextStyle(
                                     color: _textMain,
                                     fontSize: 40,
                                     fontWeight: FontWeight.w800,
@@ -185,9 +186,9 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                const Text(
-                                  'Keep track of everyone in the household.',
-                                  style: TextStyle(
+                                Text(
+                                  context.tr('Keep track of everyone in the household.'),
+                                  style: const TextStyle(
                                     color: _textMuted,
                                     fontSize: 16,
                                     height: 1.45,
@@ -210,8 +211,8 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                           const SizedBox(height: 12),
                                           Text(
                                             canManagePets
-                                                ? 'Add all your companions to stay connected'
-                                                : 'No hay mascotas en esta familia.',
+                                                ? context.tr('Add all your companions to stay connected')
+                                                : context.tr('No pets in this family.'),
                                             textAlign: TextAlign.center,
                                             style: const TextStyle(
                                               color: _textMuted,
@@ -227,19 +228,19 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                       children: [
                                         ...pets.map((petDoc) {
                                           final petData = petDoc.data();
-                                          final name = (petData['name'] as String?) ?? 'Pet';
-                                          final breed = (petData['breed'] as String?) ?? 'Unknown';
+                                          final name = (petData['name'] as String?) ?? context.tr('Pet');
+                                          final breed = (petData['breed'] as String?) ?? context.tr('Unknown');
                                           final age = petData['age'] as int? ?? 0;
                                           final photoUrl = (petData['photo_url'] as String?) ?? '';
                                           final avatarId = (petData['avatar_id'] as String?) ?? '';
                                           final notes = (petData['notes'] as String?) ?? '';
 
-                                          var statusLabel = 'ACTIVE';
+                                          var statusLabel = context.tr('ACTIVE');
                                           final lowerNotes = notes.toLowerCase();
                                           if (lowerNotes.contains('sitter')) {
-                                            statusLabel = 'AT SITTER\'S';
+                                            statusLabel = context.tr('AT SITTER\'S');
                                           } else if (lowerNotes.contains('vet')) {
-                                            statusLabel = 'AT VET';
+                                            statusLabel = context.tr('AT VET');
                                           }
 
                                           return Container(
@@ -282,7 +283,7 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                                       ),
                                                       const SizedBox(height: 4),
                                                       Text(
-                                                        '$breed • $age Years',
+                                                        '$breed • $age ${context.tr('Years')}',
                                                         style: const TextStyle(
                                                           color: _textMuted,
                                                           fontSize: 14,
@@ -350,9 +351,9 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                               border: Border.all(
                                                   color: _textMuted.withValues(alpha: 0.25)),
                                             ),
-                                            child: const Text(
-                                              'Modo miembro: solo puedes visualizar mascotas.',
-                                              style: TextStyle(color: _textMuted, fontSize: 13),
+                                            child: Text(
+                                              context.tr('Member mode: you can only view pets.'),
+                                              style: const TextStyle(color: _textMuted, fontSize: 13),
                                             ),
                                           ),
                                       ],

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/notification_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -96,7 +97,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         _isLoadingPreferences = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not load notification settings.')),
+        SnackBar(content: Text(context.tr('Could not load notification settings.'))),
       );
     }
   }
@@ -173,7 +174,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       }
       localSet(oldValue);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save notification setting.')),
+        SnackBar(content: Text(context.tr('Could not save notification setting.'))),
       );
     }
   }
@@ -182,7 +183,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final pickedStart = await showTimePicker(
       context: context,
       initialTime: _quietStart,
-      helpText: 'Select quiet hours start',
+      helpText: context.tr('Select quiet hours start'),
     );
     if (pickedStart == null || !mounted) {
       return;
@@ -191,7 +192,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final pickedEnd = await showTimePicker(
       context: context,
       initialTime: _quietEnd,
-      helpText: 'Select quiet hours end',
+      helpText: context.tr('Select quiet hours end'),
     );
     if (pickedEnd == null || !mounted) {
       return;
@@ -223,7 +224,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         _quietHoursEnabled = oldEnabled;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save quiet hours.')),
+        SnackBar(content: Text(context.tr('Could not save quiet hours.'))),
       );
     }
   }
@@ -314,9 +315,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
               ),
               const SizedBox(width: 2),
-              const Text(
-                'Notifications',
-                style: TextStyle(
+              Text(
+                context.tr('Notifications'),
+                style: const TextStyle(
                   color: _title,
                   fontSize: 33,
                   fontWeight: FontWeight.w700,
@@ -334,23 +335,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Push Notifications',
-                style: TextStyle(
+                context.tr('Push Notifications'),
+                style: const TextStyle(
                   color: _title,
                   fontSize: 30,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.35,
                 ),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
-                'Stay updated in real-time about your pets',
-                style: TextStyle(
+                context.tr('Stay updated in real-time about your pets'),
+                style: const TextStyle(
                   color: _muted,
                   fontSize: 18,
                   height: 1.4,
@@ -397,7 +398,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 _familyUpdates = oldFamilyUpdates;
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Could not save notification setting.')),
+                SnackBar(content: Text(context.tr('Could not save notification setting.'))),
               );
             });
           },
@@ -423,7 +424,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             icon: Icons.restaurant,
             iconColor: _secondary,
             iconBg: const Color(0xFF172A4C),
-            title: 'Feeding & Water',
+            title: context.tr('Feeding & Water'),
             value: _feedWater,
             onChanged: !_pushEnabled
                 ? null
@@ -439,7 +440,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             icon: Icons.directions_walk,
             iconColor: const Color(0xFFA6D9C2),
             iconBg: const Color(0xFF193035),
-            title: 'Walks & Exercise',
+            title: context.tr('Walks & Exercise'),
             value: _walksExercise,
             onChanged: !_pushEnabled
                 ? null
@@ -455,7 +456,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             icon: Icons.medical_services_outlined,
             iconColor: const Color(0xFFFF8E9A),
             iconBg: const Color(0xFF3A1B2D),
-            title: 'Medication & Vet',
+            title: context.tr('Medication & Vet'),
             value: _medicationVet,
             onChanged: !_pushEnabled
                 ? null
@@ -471,7 +472,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             icon: Icons.group,
             iconColor: const Color(0xFFFFC077),
             iconBg: const Color(0xFF30261A),
-            title: 'Family Updates',
+            title: context.tr('Family Updates'),
             value: _familyUpdates,
             onChanged: !_pushEnabled
                 ? null
@@ -526,10 +527,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Quiet Hours',
-                      style: TextStyle(
+                      context.tr('Quiet Hours'),
+                      style: const TextStyle(
                         color: _title,
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -552,7 +553,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           _quietHoursEnabled = oldValue;
                         });
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Could not save quiet hours.')),
+                          SnackBar(content: Text(context.tr('Could not save quiet hours.'))),
                         );
                       });
                     },
@@ -606,7 +607,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  child: const Text('Configure'),
+                  child: Text(context.tr('Configure')),
                 ),
               ),
             ],

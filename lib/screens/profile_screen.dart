@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
+import '../l10n/app_i18n.dart';
 import '../utils/pet_avatar_catalog.dart';
 import '../utils/user_avatar_catalog.dart';
 import 'account_settings_screen.dart';
@@ -73,7 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? profileUsername
             : (fallbackUsername != null && fallbackUsername.isNotEmpty)
                 ? fallbackUsername
-                : 'Usuario';
+            : context.tr('User');
         _activeFamilyId = (activeFamilyId != null && activeFamilyId.isNotEmpty)
             ? activeFamilyId
             : null;
@@ -91,10 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _userName = 'Usuario';
-          _activePetName = 'Pet';
-          _activePetBreed = 'Breed not set';
-          _activePetAgeLabel = 'Age not set';
+          _userName = context.tr('User');
+          _activePetName = context.tr('Pet');
+          _activePetBreed = context.tr('Breed not set');
+          _activePetAgeLabel = context.tr('Age not set');
           _activePetPhotoUrl = '';
           _activePetAvatarId = '';
           _profileAvatarId = kUserAvatarChoices.first.id;
@@ -108,14 +109,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (ageValue is num) {
       final age = ageValue.toInt();
       if (age == 1) {
-        return '1 year';
+        return '1 ${context.tr('years')}';
       }
       if (age > 1) {
-        return '$age years';
+        return '$age ${context.tr('years')}';
       }
     }
 
-    return 'Age not set';
+    return context.tr('Age not set');
   }
 
   Future<void> _loadActivePetContext() async {
@@ -135,9 +136,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _activeFamilyId = null;
         _activePetId = null;
-        _activePetName = 'Pet';
-        _activePetBreed = 'No family assigned';
-        _activePetAgeLabel = 'Age not set';
+        _activePetName = context.tr('Pet');
+        _activePetBreed = context.tr('No family assigned');
+        _activePetAgeLabel = context.tr('Age not set');
         _activePetPhotoUrl = '';
         _activePetAvatarId = '';
       });
@@ -153,9 +154,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _activeFamilyId = familyId;
         _activePetId = null;
-        _activePetName = 'No pet yet';
-        _activePetBreed = 'No pets in this family';
-        _activePetAgeLabel = 'Add a pet';
+        _activePetName = context.tr('No pet yet');
+        _activePetBreed = context.tr('No pets in this family');
+        _activePetAgeLabel = context.tr('Add a pet');
         _activePetPhotoUrl = '';
         _activePetAvatarId = '';
       });
@@ -182,8 +183,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _activeFamilyId = familyId;
       _activePetId = selectedPet.id;
-      _activePetName = (petName != null && petName.isNotEmpty) ? petName : 'Pet';
-      _activePetBreed = (petBreed != null && petBreed.isNotEmpty) ? petBreed : 'Breed not set';
+      _activePetName = (petName != null && petName.isNotEmpty) ? petName : context.tr('Pet');
+      _activePetBreed =
+          (petBreed != null && petBreed.isNotEmpty) ? petBreed : context.tr('Breed not set');
       _activePetAgeLabel = _formatPetAgeLabel(petData['age']);
       _activePetPhotoUrl = (photoUrl != null && photoUrl.isNotEmpty) ? photoUrl : '';
       _activePetAvatarId = (avatarId != null && avatarId.isNotEmpty)
@@ -230,7 +232,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save active pet.')),
+        SnackBar(content: Text(context.tr('Could not save active pet.'))),
       );
     }
   }
@@ -243,7 +245,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero crea o selecciona una familia.')),
+        SnackBar(content: Text(context.tr('First create or select a family.'))),
       );
       return;
     }
@@ -255,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay mascotas disponibles todavía.')),
+        SnackBar(content: Text(context.tr('No pets available yet'))),
       );
       return;
     }
@@ -284,10 +286,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Change Pet',
-                        style: TextStyle(
+                        context.tr('Change Pet'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
@@ -301,15 +303,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'Pick the pet to sync from your profile.',
-                  style: TextStyle(color: _textMuted),
+                Text(
+                  context.tr('Pick the pet to sync from your profile.'),
+                  style: const TextStyle(color: _textMuted),
                 ),
                 const SizedBox(height: 14),
                 ...pets.map((petDoc) {
                   final petData = petDoc.data();
-                  final name = ((petData['name'] as String?) ?? 'Pet').trim();
-                  final breed = ((petData['breed'] as String?) ?? 'Unknown').trim();
+                  final name = ((petData['name'] as String?) ?? context.tr('Pet')).trim();
+                  final breed = ((petData['breed'] as String?) ?? context.tr('Unknown')).trim();
                   final photoUrl = ((petData['photo_url'] as String?) ?? '').trim();
                   final avatarId = ((petData['avatar_id'] as String?) ?? '').trim();
                   final isSelected = petDoc.id == _activePetId;
@@ -402,20 +404,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (BuildContext context) => AlertDialog(
         backgroundColor: _surfaceContainer,
-        title: const Text(
-          'Log Out',
-          style: TextStyle(color: _textMain, fontWeight: FontWeight.bold),
+        title: Text(
+          context.tr('Log out'),
+          style: const TextStyle(color: _textMain, fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          'Are you sure you want to log out?',
-          style: TextStyle(color: _textMuted),
+        content: Text(
+          context.tr('Are you sure you want to log out?'),
+          style: const TextStyle(color: _textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: _primary),
+            child: Text(
+              context.tr('Cancel'),
+              style: const TextStyle(color: _primary),
             ),
           ),
           TextButton(
@@ -427,9 +429,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 (route) => false,
               );
             },
-            child: const Text(
-              'Log Out',
-              style: TextStyle(color: _errorRed),
+            child: Text(
+              context.tr('Log out'),
+              style: const TextStyle(color: _errorRed),
             ),
           ),
         ],
@@ -532,9 +534,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'Profile',
-          style: TextStyle(
+        Text(
+          context.tr('Profile'),
+          style: const TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
             color: _textMain,
@@ -565,8 +567,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return FutureBuilder<({String roleName, String roleLabel})>(
       future: _getCurrentUserRole(),
       builder: (context, roleSnapshot) {
-        final roleName = roleSnapshot.data?.roleName ?? 'Member';
-        final roleLabel = roleSnapshot.data?.roleLabel ?? 'Member';
+        final roleName = roleSnapshot.data?.roleName ?? context.tr('Member');
+        final roleLabel = roleSnapshot.data?.roleLabel ?? context.tr('MEMBER');
         
         return Container(
           padding: const EdgeInsets.all(20),
@@ -604,7 +606,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _userName ?? 'User',
+                      _userName ?? context.tr('User'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -648,10 +650,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
   
   Future<({String roleName, String roleLabel})> _getCurrentUserRole() async {
+    final noFamilyName = context.tr('No family');
+    final noFamilyLabel = context.tr('NO FAMILY');
+    final ownerName = context.tr('Family Owner');
+    final ownerLabel = context.tr('OWNER');
+    final adminName = context.tr('Family Administrator');
+    final adminLabel = context.tr('ADMIN');
+    final memberName = context.tr('Family Member');
+    final memberLabel = context.tr('MEMBER');
+
     try {
       final families = await _familyService.streamFamiliesForCurrentUser().first;
       if (families.isEmpty) {
-        return (roleName: 'Sin familia', roleLabel: 'NO FAMILY');
+        return (roleName: noFamilyName, roleLabel: noFamilyLabel);
       }
 
       late QueryDocumentSnapshot<Map<String, dynamic>> selectedFamily;
@@ -669,14 +680,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .toSet();
 
       if (currentUid == ownerUid) {
-        return (roleName: 'Family Owner', roleLabel: 'OWNER');
+        return (roleName: ownerName, roleLabel: ownerLabel);
       } else if (adminUids.contains(currentUid)) {
-        return (roleName: 'Family Administrator', roleLabel: 'ADMIN');
+        return (roleName: adminName, roleLabel: adminLabel);
       } else {
-        return (roleName: 'Family Member', roleLabel: 'MEMBER');
+        return (roleName: memberName, roleLabel: memberLabel);
       }
     } catch (_) {
-      return (roleName: 'Family Member', roleLabel: 'MEMBER');
+      return (roleName: memberName, roleLabel: memberLabel);
     }
   }
 
@@ -684,9 +695,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'SYNCING WITH',
-          style: TextStyle(
+        Text(
+          context.tr('SYNCING WITH'),
+          style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: _textMuted,
@@ -774,9 +785,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text(
-                    'FAMILY MEMBERS',
+                    context.tr('FAMILY MEMBERS'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -785,7 +796,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Text(
-                    '0 active',
+                    '0 ${context.tr('active')}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -817,9 +828,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text(
-                    'FAMILY MEMBERS',
+                    context.tr('FAMILY MEMBERS'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -828,7 +839,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Text(
-                    '0 active',
+                    '0 ${context.tr('active')}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -845,9 +856,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: _surfaceContainer,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Text(
-                  'No family members yet.',
-                  style: TextStyle(
+                child: Text(
+                  context.tr('No family members yet.'),
+                  style: const TextStyle(
                     color: _textMuted,
                     fontSize: 13,
                   ),
@@ -876,9 +887,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text(
-                    'FAMILY MEMBERS',
+                    context.tr('FAMILY MEMBERS'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -887,7 +898,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Text(
-                    '0 active',
+                    '0 ${context.tr('active')}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -904,9 +915,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: _surfaceContainer,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Text(
-                  'No family members yet.',
-                  style: TextStyle(
+                child: Text(
+                  context.tr('No family members yet.'),
+                  style: const TextStyle(
                     color: _textMuted,
                     fontSize: 13,
                   ),
@@ -944,8 +955,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'FAMILY MEMBERS',
+                    Text(
+                      context.tr('FAMILY MEMBERS'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -954,7 +965,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     Text(
-                      '$activeCount active',
+                      '$activeCount ${context.tr('active')}',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -972,9 +983,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: _surfaceContainer,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Text(
-                      'No family members yet.',
-                      style: TextStyle(
+                    child: Text(
+                      context.tr('No family members yet.'),
+                      style: const TextStyle(
                         color: _textMuted,
                         fontSize: 13,
                       ),
@@ -1088,8 +1099,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'PREFERENCES',
+        Text(
+          context.tr('PREFERENCES'),
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -1100,8 +1111,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.people,
-          title: 'Manage Family & Pets',
-          subtitle: 'Add or remove members and pets',
+          title: context.tr('Manage Family & Pets'),
+          subtitle: context.tr('Add or remove members and pets'),
           onTap: () async {
             await Navigator.of(context).push(
               MaterialPageRoute(
@@ -1115,8 +1126,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.notifications,
-          title: 'Notifications',
-          subtitle: 'Manage push and email alerts',
+          title: context.tr('Notifications'),
+          subtitle: context.tr('Manage push and email alerts'),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -1128,8 +1139,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.settings,
-          title: 'Account Settings',
-          subtitle: 'Email, password and security',
+          title: context.tr('Account Settings'),
+          subtitle: context.tr('Email, password and security'),
           onTap: () async {
             await Navigator.of(context).push(
               MaterialPageRoute(
@@ -1231,9 +1242,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               size: 20,
             ),
             const SizedBox(width: 12),
-            const Text(
-              'Log Out',
-              style: TextStyle(
+            Text(
+              context.tr('Log out'),
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: _errorRed,

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/family_service.dart';
 import '../utils/user_avatar_catalog.dart';
 import 'manage_pets_screen.dart';
@@ -41,7 +42,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Invitation code copied.')),
+      SnackBar(content: Text(context.tr('Invitation code copied.'))),
     );
   }
 
@@ -64,12 +65,14 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
       
       return _MemberData(
         uid: doc.id,
-        name: (username != null && username.isNotEmpty) ? username : 'Member',
+        name: (username != null && username.isNotEmpty)
+            ? username
+            : context.tr('Member'),
         subtitle: isOwner
-            ? 'Family Owner'
+            ? context.tr('Family Owner')
             : isAdmin
-                ? 'Family Administrator'
-                : 'Member',
+                ? context.tr('Family Administrator')
+                : context.tr('Member'),
         isAdmin: isAdmin,
         avatarId: resolveUserAvatar(avatarId).id,
       );
@@ -83,24 +86,24 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _surface,
-        title: const Text(
-          'Delete Family',
-          style: TextStyle(color: _textMain, fontWeight: FontWeight.w700),
+        title: Text(
+          context.tr('Delete Family'),
+          style: const TextStyle(color: _textMain, fontWeight: FontWeight.w700),
         ),
-        content: const Text(
-          'This action will permanently delete the family and its pets. Continue?',
-          style: TextStyle(color: _textMuted),
+        content: Text(
+          context.tr('This action will permanently delete the family and its pets. Continue?'),
+          style: const TextStyle(color: _textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: _errorRed),
+            child: Text(
+              context.tr('Delete'),
+              style: const TextStyle(color: _errorRed),
             ),
           ),
         ],
@@ -120,7 +123,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
 
       final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Family deleted successfully.')),
+        SnackBar(content: Text(context.tr('Family deleted successfully.'))),
       );
       Navigator.of(context).pop();
     } catch (e) {
@@ -130,7 +133,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
 
       final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
-        SnackBar(content: Text('No se pudo eliminar la familia: $e')),
+        SnackBar(content: Text('${context.tr('Could not delete family.')} $e')),
       );
     }
   }
@@ -172,10 +175,10 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                       const SizedBox(width: 8),
                       const Icon(Icons.pets, color: _primary, size: 28),
                       const SizedBox(width: 8),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Manage Family',
-                          style: TextStyle(
+                          context.tr('Manage Family'),
+                          style: const TextStyle(
                             color: _textMain,
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -207,9 +210,9 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Expand the pack',
-                                style: TextStyle(
+                              Text(
+                                context.tr('Expand the pack'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 30,
                                   fontWeight: FontWeight.w700,
@@ -217,9 +220,9 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
-                                'Share this family code so others can join your pack.',
-                                style: TextStyle(
+                              Text(
+                                context.tr('Share this family code so others can join your pack.'),
+                                style: const TextStyle(
                                   color: _textMuted,
                                   fontSize: 16,
                                   height: 1.4,
@@ -242,16 +245,17 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                         color: _surface,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
-                                      child: const Text(
-                                        'No family found.',
-                                        style: TextStyle(color: _textMuted, fontSize: 16),
+                                      child: Text(
+                                        context.tr('No family found.'),
+                                        style: const TextStyle(color: _textMuted, fontSize: 16),
                                       ),
                                     );
                                   }
 
                                   final family = families.first;
                                   final familyData = family.data();
-                                  final familyName = (familyData['name'] as String?) ?? 'My Family';
+                                    final familyName =
+                                      (familyData['name'] as String?) ?? context.tr('My Family');
                                   final storedCode = (familyData['invite_code'] as String?)?.trim() ?? '';
                                   final inviteCode = storedCode.isNotEmpty
                                       ? storedCode
@@ -291,7 +295,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                         IconButton(
                                           onPressed: () => _copyInviteCode(inviteCode),
                                           icon: const Icon(Icons.copy_rounded, color: _primary),
-                                          tooltip: 'Copy code',
+                                          tooltip: context.tr('Copy code'),
                                         ),
                                       ],
                                     ),
@@ -339,7 +343,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'CURRENT MEMBERS',
+                                      context.tr('CURRENT MEMBERS'),
                                       style: const TextStyle(
                                         color: _textMuted,
                                         fontSize: 12,
@@ -348,7 +352,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                       ),
                                     ),
                                     Text(
-                                      '${memberUids.length} active members',
+                                      '${memberUids.length} ${context.tr('active members')}',
                                       style: const TextStyle(
                                         color: _textMuted,
                                         fontSize: 12,
@@ -411,7 +415,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                                                           .instance
                                                                           .currentUser
                                                                           ?.uid
-                                                                  ? ' (You)'
+                                                              ? ' (${context.tr('You')})'
                                                                   : ''),
                                                           style: const TextStyle(
                                                             color: _textMain,
@@ -467,9 +471,9 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                         padding: const EdgeInsets.symmetric(vertical: 14),
                                       ),
                                       icon: const Icon(Icons.delete_outline),
-                                      label: const Text(
-                                        'Delete Family',
-                                        style: TextStyle(fontWeight: FontWeight.w700),
+                                      label: Text(
+                                        context.tr('Delete Family'),
+                                        style: const TextStyle(fontWeight: FontWeight.w700),
                                       ),
                                     ),
                                   ),
@@ -508,23 +512,23 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                       color: _primary, size: 24),
                                 ),
                                 const SizedBox(width: 14),
-                                const Expanded(
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Manage Pets',
-                                        style: TextStyle(
+                                        context.tr('Manage Pets'),
+                                        style: const TextStyle(
                                           color: _textMain,
                                           fontSize: 17,
                                           fontWeight: FontWeight.w700,
                                         ),
                                       ),
-                                      SizedBox(height: 2),
+                                      const SizedBox(height: 2),
                                       Text(
-                                        'View and edit shared pet profiles',
-                                        style: TextStyle(
+                                        context.tr('View and edit shared pet profiles'),
+                                        style: const TextStyle(
                                           color: _textMuted,
                                           fontSize: 13,
                                         ),

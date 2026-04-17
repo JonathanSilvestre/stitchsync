@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../services/auth_service.dart';
 import '../services/family_service.dart';
 import 'add_new_pet_screen.dart';
@@ -36,7 +37,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
     final familyName = _familyNameController.text.trim();
     if (familyName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Escribe un nombre para la familia')),
+        SnackBar(content: Text(context.tr('Please enter a family name.'))),
       );
       return;
     }
@@ -68,18 +69,18 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
         builder: (dialogContext) {
           return AlertDialog(
             backgroundColor: _surfaceHigh,
-            title: const Text(
-              'Familia creada',
-              style: TextStyle(color: _textMain, fontWeight: FontWeight.w700),
+            title: Text(
+              context.tr('Family created'),
+              style: const TextStyle(color: _textMain, fontWeight: FontWeight.w700),
             ),
-            content: const Text(
-              '¿Quieres agregar una mascota ahora?',
-              style: TextStyle(color: _textMuted),
+            content: Text(
+              context.tr('Do you want to add a pet now?'),
+              style: const TextStyle(color: _textMuted),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('No'),
+                child: Text(context.tr('No')),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -87,7 +88,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                   backgroundColor: _primary,
                   foregroundColor: const Color(0xFF0A2550),
                 ),
-                child: const Text('Si'),
+                child: Text(context.tr('Yes')),
               ),
             ],
           );
@@ -160,10 +161,10 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                         icon: const Icon(Icons.arrow_back, color: _primary, size: 30),
                       ),
                       const SizedBox(width: 4),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Create Family',
-                          style: TextStyle(
+                          context.tr('Create Family'),
+                          style: const TextStyle(
                             color: Color(0xFF9DC7FF),
                             fontSize: 32,
                             height: 1,
@@ -192,9 +193,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Start Your Family Circle',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Start Your Family Circle'),
+                          style: const TextStyle(
                             color: _textMain,
                             fontSize: 40,
                             height: 1.08,
@@ -203,9 +204,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        const Text(
-                          'Create a group to share Stitch\'s care schedule with everyone.',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Create a group to share Stitch\'s care schedule with everyone.'),
+                          style: const TextStyle(
                             color: _textMuted,
                             fontSize: 18,
                             height: 1.45,
@@ -230,9 +231,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 8),
-                              const Text(
-                                'FAMILY NAME',
-                                style: TextStyle(
+                              Text(
+                                context.tr('FAMILY NAME'),
+                                style: const TextStyle(
                                   color: Color(0xFFAFBED9),
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -248,8 +249,8 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                 child: TextField(
                                   controller: _familyNameController,
                                   style: const TextStyle(color: _textMain, fontSize: 18),
-                                  decoration: const InputDecoration(
-                                    hintText: 'e.g., The Rodriguez Family',
+                                  decoration: InputDecoration(
+                                    hintText: context.tr('e.g., The Rodriguez Family'),
                                     hintStyle: TextStyle(color: Color(0xFF60708E), fontSize: 18),
                                     border: InputBorder.none,
                                     contentPadding:
@@ -258,9 +259,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              const Text(
-                                'This is the name your family members will see when they join.',
-                                style: TextStyle(
+                              Text(
+                                context.tr('This is the name your family members will see when they join.'),
+                                style: const TextStyle(
                                   color: _textMuted,
                                   fontSize: 15,
                                   height: 1.45,
@@ -274,14 +275,14 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                   color: _surfaceHigh.withValues(alpha: 0.55),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   children: [
-                                    Icon(Icons.info, color: _primary),
-                                    SizedBox(width: 12),
+                                    const Icon(Icons.info, color: _primary),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
-                                        'Your family circle is encrypted and private to invited members only.',
-                                        style: TextStyle(
+                                        context.tr('Your family circle is encrypted and private to invited members only.'),
+                                        style: const TextStyle(
                                           color: _textMuted,
                                           fontSize: 14,
                                           height: 1.4,
@@ -336,7 +337,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                                 AlwaysStoppedAnimation<Color>(Colors.white),
                                           ),
                                         )
-                                      : const Text('Create Family'),
+                                          : Text(context.tr('Create Family')),
                                 ),
                               ),
                             ],
