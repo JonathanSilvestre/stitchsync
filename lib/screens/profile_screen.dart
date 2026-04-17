@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
+import '../utils/user_avatar_catalog.dart';
 import 'account_settings_screen.dart';
 import 'home_screen.dart';
 import 'manage_family_screen.dart';
@@ -43,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _activePetAgeLabel = 'Age not set';
   String _activePetPhotoUrl = '';
   String _activePetAvatarId = '';
+  String _profileAvatarId = kUserAvatarChoices.first.id;
   bool _isLoading = true;
 
   @override
@@ -60,6 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final fallbackUsername = currentUser?.email?.split('@').first;
       final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
       final activePetId = (profile?['active_pet_id'] as String?)?.trim();
+      final profileAvatarId = (profile?['profile_avatar_id'] as String?)?.trim();
 
       if (!mounted) {
         return;
@@ -75,6 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? activeFamilyId
             : null;
         _activePetId = (activePetId != null && activePetId.isNotEmpty) ? activePetId : null;
+        _profileAvatarId = resolveUserAvatar(profileAvatarId).id;
       });
 
       await _loadActivePetContext();
@@ -93,6 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _activePetAgeLabel = 'Age not set';
           _activePetPhotoUrl = '';
           _activePetAvatarId = '';
+          _profileAvatarId = kUserAvatarChoices.first.id;
           _isLoading = false;
         });
       }
@@ -583,10 +588,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: _primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  size: 40,
-                  color: _primary,
+                child: Center(
+                  child: buildUserAvatarVisual(
+                    avatarId: _profileAvatarId,
+                    size: 72,
+                    borderRadius: BorderRadius.circular(14),
+                    emojiSize: 28,
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1051,64 +1059,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required int index,
   }) {
     final memberData = memberDoc.data();
-    final colors = [_primary, Color(0xFF6D9CFE), Color(0xFFE8AAFF)];
-    final avatarColor = colors[index % colors.length];
-    final username = (memberData['username'] as String?)?.trim();
-    final email = (memberData['email'] as String?)?.trim();
-    final displayName = (username != null && username.isNotEmpty)
-        ? username
-        : (email != null && email.isNotEmpty)
-            ? email
-            : 'M';
-    final photoUrl = ((memberData['photo_url'] as String?) ??
-            (memberData['profile_photo_url'] as String?) ??
-            (memberData['avatar_url'] as String?) ??
-            '')
-        .trim();
-
-    final initial = displayName.characters.first.toUpperCase();
+    final profileAvatarId = (memberData['profile_avatar_id'] as String?)?.trim();
+    final resolvedAvatarId = resolveUserAvatar(profileAvatarId).id;
 
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: avatarColor.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: _surfaceContainer,
           width: 2,
         ),
       ),
-      child: photoUrl.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Text(
-                      initial,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: avatarColor,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            )
-          : Center(
-              child: Text(
-                initial,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: avatarColor,
-                ),
-              ),
-            ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: buildUserAvatarVisual(
+          avatarId: resolvedAvatarId,
+          size: 48,
+          borderRadius: BorderRadius.circular(24),
+          emojiSize: 18,
+        ),
+      ),
     );
   }
 
@@ -1158,13 +1130,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           icon: Icons.settings,
           title: 'Account Settings',
           subtitle: 'Email, password and security',
-                 onTap: () {
-                   Navigator.of(context).push(
-                     MaterialPageRoute(
-                       builder: (_) => const AccountSettingsScreen(),
-                     ),
-                   );
-                 },
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AccountSettingsScreen(),
+              ),
+            );
+            await _loadUserData();
+          },
         ),
       ],
     );

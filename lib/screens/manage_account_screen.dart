@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -23,11 +24,13 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  String _selectedLanguage = 'es';
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadLanguage();
   }
 
   @override
@@ -52,6 +55,49 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
     setState(() {
       _isLoadingProfile = false;
     });
+  }
+
+  Future<void> _loadLanguage() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final language = (doc.data()?['language'] as String?) ?? 'es';
+      if (mounted) {
+        setState(() {
+          _selectedLanguage = language;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveLanguage(String language) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(
+            {'language': language},
+            SetOptions(merge: true),
+          );
+      if (mounted) {
+        setState(() {
+          _selectedLanguage = language;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo guardar el idioma')),
+      );
+    }
   }
 
   Future<void> _saveAccount() async {
@@ -262,6 +308,8 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                         icon: const Icon(Icons.logout),
                         label: const Text('Cerrar sesión'),
                       ),
+                      const SizedBox(height: 24),
+                      _buildLanguageSection(),
                     ],
                   ),
                 ),
@@ -293,6 +341,75 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7FB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFDDE4ED),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.language,
+                color: Color(0xFF1D6A7B),
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Text(
+                'Idioma',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF17324D),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFFDDE4ED),
+                width: 1,
+              ),
+            ),
+            child: DropdownButton<String>(
+              value: _selectedLanguage,
+              onChanged: (String? newValue) {
+                if (newValue != null) {
+                  _saveLanguage(newValue);
+                }
+              },
+              isExpanded: true,
+              underline: const SizedBox(),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              items: const [
+                DropdownMenuItem(
+                  value: 'es',
+                  child: Text('Español'),
+                ),
+                DropdownMenuItem(
+                  value: 'en',
+                  child: Text('English'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

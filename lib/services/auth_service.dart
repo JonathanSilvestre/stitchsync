@@ -177,7 +177,7 @@ class AuthService {
 
   Future<void> updateAccount({
     required String newUsername,
-    required String currentPassword,
+    String? currentPassword,
     String? newPassword,
   }) async {
     final user = _auth.currentUser;
@@ -193,15 +193,29 @@ class AuthService {
     final currentUserDoc = await _usersCollection.doc(user.uid).get();
     final currentUsername =
         (currentUserDoc.data()?['username_lower'] as String?) ?? '';
+    final usernameChanged = normalizedNewUsername != currentUsername;
+    final wantsPasswordChange = newPassword != null && newPassword.trim().isNotEmpty;
 
-    final credential = EmailAuthProvider.credential(
-      email: user.email!,
-      password: currentPassword,
-    );
+    if (!usernameChanged && !wantsPasswordChange) {
+      return;
+    }
 
-    await user.reauthenticateWithCredential(credential);
+    if (wantsPasswordChange) {
+      final providedPassword = (currentPassword ?? '').trim();
+      if (providedPassword.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'requires-recent-login',
+          message: 'Debes ingresar tu contraseña actual para cambiarla.',
+        );
+      }
 
-    if (newPassword != null && newPassword.trim().isNotEmpty) {
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: providedPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+
       await user.updatePassword(newPassword.trim());
     }
 
@@ -212,7 +226,7 @@ class AuthService {
         : _usernamesCollection.doc(currentUsername);
 
     await _firestore.runTransaction((tx) async {
-      if (normalizedNewUsername != currentUsername) {
+      if (usernameChanged) {
         final newUsernameSnap = await tx.get(newUsernameRef);
         if (newUsernameSnap.exists) {
           throw FirebaseAuthException(
@@ -233,11 +247,15 @@ class AuthService {
         }
       }
 
-      tx.set(userRef, {
-        'username': newUsername.trim(),
-        'username_lower': normalizedNewUsername,
-        'updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      tx.set(
+        userRef,
+        {
+          if (usernameChanged) 'username': newUsername.trim(),
+          if (usernameChanged) 'username_lower': normalizedNewUsername,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
     });
   }
 

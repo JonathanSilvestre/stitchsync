@@ -1,6 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../utils/user_avatar_catalog.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({super.key});
@@ -11,6 +14,7 @@ class AccountSettingsScreen extends StatefulWidget {
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final AuthService _authService = AuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _currentPasswordController = TextEditingController();
@@ -22,6 +26,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  String _selectedLanguage = 'en';
+  String _selectedAvatarId = kUserAvatarChoices.first.id;
+  String _initialUsername = '';
+  String _initialLanguage = 'en';
+  String _initialAvatarId = kUserAvatarChoices.first.id;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -56,6 +65,17 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           _usernameController.text =
               profile?['username'] ?? user?.displayName ?? '';
           _emailController.text = user?.email ?? '';
+          final language = (profile?['language'] as String?)?.toLowerCase();
+          if (language == 'es' || language == 'en') {
+            _selectedLanguage = language!;
+          }
+          final avatarId = (profile?['profile_avatar_id'] as String?)?.trim();
+          if (avatarId != null && avatarId.isNotEmpty) {
+            _selectedAvatarId = resolveUserAvatar(avatarId).id;
+          }
+          _initialUsername = _usernameController.text.trim();
+          _initialLanguage = _selectedLanguage;
+          _initialAvatarId = _selectedAvatarId;
           _isLoading = false;
         });
       }
@@ -76,9 +96,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     try {
       final username = _usernameController.text.trim();
-      final currentPassword = _currentPasswordController.text;
-      final newPassword = _newPasswordController.text;
-      final confirmNewPassword = _confirmNewPasswordController.text;
+      final currentPassword = _currentPasswordController.text.trim();
+      final newPassword = _newPasswordController.text.trim();
+      final confirmNewPassword = _confirmNewPasswordController.text.trim();
+        final usernameChanged = username != _initialUsername;
+        final languageChanged = _selectedLanguage != _initialLanguage;
+        final avatarChanged = _selectedAvatarId != _initialAvatarId;
+      final wantsPasswordChange = newPassword.isNotEmpty;
 
       if (username.isEmpty) {
         throw Exception('Username cannot be empty');
@@ -92,15 +116,48 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         throw Exception('Current password is required to change password');
       }
 
-      await _authService.updateAccount(
-        newUsername: username,
-        currentPassword: currentPassword,
-        newPassword: newPassword.isNotEmpty ? newPassword : null,
-      );
+      if (!usernameChanged && !wantsPasswordChange && !languageChanged && !avatarChanged) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No changes to save.')),
+          );
+        }
+        return;
+      }
+
+      if (usernameChanged || wantsPasswordChange) {
+        await _authService.updateAccount(
+          newUsername: username,
+          currentPassword: currentPassword.isEmpty ? null : currentPassword,
+          newPassword: newPassword.isNotEmpty ? newPassword : null,
+        );
+      }
+
+      if (languageChanged) {
+        await _saveLanguagePreference(_selectedLanguage);
+      }
+
+      if (avatarChanged) {
+        await _saveAvatarPreference(_selectedAvatarId);
+      }
+
+      _initialUsername = username;
+      _initialLanguage = _selectedLanguage;
+      _initialAvatarId = _selectedAvatarId;
+
+      _currentPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmNewPasswordController.clear();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Changes saved successfully')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_authService.getReadableAuthError(e))),
         );
       }
     } catch (e) {
@@ -114,6 +171,119 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _saveLanguagePreference(String language) async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      return;
+    }
+
+    await _firestore.collection('users').doc(user.uid).set(
+      {'language': language},
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> _saveAvatarPreference(String avatarId) async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      return;
+    }
+
+    await _firestore.collection('users').doc(user.uid).set(
+      {'profile_avatar_id': avatarId},
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> _openAvatarPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Choose profile avatar',
+                  style: TextStyle(
+                    color: _textMain,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Pick one of your 8 profile avatars.',
+                  style: TextStyle(
+                    color: _textMuted,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(sheetContext).size.height * 0.42,
+                  ),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    itemCount: kUserAvatarChoices.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 1,
+                    ),
+                    itemBuilder: (context, index) {
+                      final avatar = kUserAvatarChoices[index];
+                      final isSelected = avatar.id == _selectedAvatarId;
+
+                      return GestureDetector(
+                          onTap: () {
+                            final navigator = Navigator.of(sheetContext);
+                          if (!mounted) {
+                            return;
+                          }
+                          setState(() {
+                            _selectedAvatarId = avatar.id;
+                          });
+                            navigator.pop();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected ? _primary : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          child: buildUserAvatarVisual(
+                            avatarId: avatar.id,
+                            size: 58,
+                            borderRadius: BorderRadius.circular(13),
+                            emojiSize: 24,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -220,28 +390,35 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               shape: BoxShape.circle,
               color: _surfaceHigh,
             ),
-            child: const Icon(
-              Icons.person,
-              size: 80,
-              color: _primary,
+            child: Center(
+              child: buildUserAvatarVisual(
+                avatarId: _selectedAvatarId,
+                size: 156,
+                borderRadius: BorderRadius.circular(80),
+                emojiSize: 64,
+              ),
             ),
           ),
         ),
         Positioned(
           bottom: 8,
           right: 8,
-          child: Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _primary,
-              border: Border.all(color: _bg, width: 3),
-            ),
-            child: const Icon(
-              Icons.edit,
-              color: _bg,
-              size: 24,
+          child: InkWell(
+            onTap: _openAvatarPicker,
+            borderRadius: BorderRadius.circular(28),
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _primary,
+                border: Border.all(color: _bg, width: 3),
+              ),
+              child: const Icon(
+                Icons.edit,
+                color: _bg,
+                size: 24,
+              ),
             ),
           ),
         ),
@@ -456,7 +633,64 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 hint: 'Email address',
                 enabled: false,
               ),
+              const SizedBox(height: 16),
+              _buildLanguageDropdown(),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLanguageDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'LANGUAGE',
+          style: TextStyle(
+            color: _textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: _surfaceHigh,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedLanguage,
+              dropdownColor: _surfaceHigh,
+              isExpanded: true,
+              iconEnabledColor: _textMuted,
+              style: const TextStyle(
+                color: _textMain,
+                fontSize: 14,
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'en',
+                  child: Text('English'),
+                ),
+                DropdownMenuItem(
+                  value: 'es',
+                  child: Text('Español'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null || value == _selectedLanguage) {
+                  return;
+                }
+                setState(() {
+                  _selectedLanguage = value;
+                });
+              },
+            ),
           ),
         ),
       ],

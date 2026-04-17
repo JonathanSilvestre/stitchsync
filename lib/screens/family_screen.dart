@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'create_family_screen.dart';
 import '../services/family_service.dart';
 import '../services/event_service.dart';
+import '../utils/user_avatar_catalog.dart';
 
 class FamilyTabContent extends StatefulWidget {
   const FamilyTabContent({super.key});
@@ -314,6 +315,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     return docs.map((doc) {
       final data = doc.data() ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
+      final avatarId = (data['profile_avatar_id'] as String?)?.trim();
       final isOwner = doc.id == ownerUid;
       final isAdmin = isOwner || adminSet.contains(doc.id);
       return _MemberData(
@@ -326,6 +328,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                 : 'Member',
         isOwner: isOwner,
         isAdmin: isAdmin,
+        avatarId: resolveUserAvatar(avatarId).id,
       );
     }).toList();
   }
@@ -811,15 +814,13 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                     ),
                                     child: Row(
                                       children: [
-                                        CircleAvatar(
-                                          radius: 26,
-                                          backgroundColor: const Color(0xFF273247),
-                                          child: Text(
-                                            member.name.characters.first.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: _textMain,
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(13),
+                                          child: buildUserAvatarVisual(
+                                            avatarId: member.avatarId,
+                                            size: 52,
+                                            borderRadius: BorderRadius.circular(13),
+                                            emojiSize: 22,
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -941,6 +942,7 @@ class _MemberData {
   final String subtitle;
   final bool isOwner;
   final bool isAdmin;
+  final String avatarId;
 
   const _MemberData({
     required this.uid,
@@ -948,5 +950,6 @@ class _MemberData {
     required this.subtitle,
     required this.isOwner,
     required this.isAdmin,
+    required this.avatarId,
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/family_service.dart';
+import '../utils/user_avatar_catalog.dart';
 import 'manage_pets_screen.dart';
 
 class ManageFamilyScreen extends StatefulWidget {
@@ -57,6 +58,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
     return docs.map((doc) {
       final data = doc.data() ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
+      final avatarId = (data['profile_avatar_id'] as String?)?.trim();
       final isOwner = doc.id == ownerUid;
       final isAdmin = isOwner || adminSet.contains(doc.id);
       
@@ -69,6 +71,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                 ? 'Family Administrator'
                 : 'Member',
         isAdmin: isAdmin,
+        avatarId: resolveUserAvatar(avatarId).id,
       );
     }).toList();
   }
@@ -383,19 +386,15 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                               ),
                                               child: Row(
                                                 children: [
-                                                  Container(
-                                                    width: 56,
-                                                    height: 56,
-                                                    decoration: BoxDecoration(
-                                                      color: _surfaceHigh,
+                                                  ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(12),
+                                                    child: buildUserAvatarVisual(
+                                                      avatarId: member.avatarId,
+                                                      size: 56,
                                                       borderRadius:
-                                                          BorderRadius
-                                                              .circular(12),
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.person,
-                                                      color: _primary,
-                                                      size: 28,
+                                                          BorderRadius.circular(12),
+                                                      emojiSize: 24,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 14),
@@ -558,11 +557,13 @@ class _MemberData {
   final String name;
   final String subtitle;
   final bool isAdmin;
+  final String avatarId;
 
   const _MemberData({
     required this.uid,
     required this.name,
     required this.subtitle,
     required this.isAdmin,
+    required this.avatarId,
   });
 }
