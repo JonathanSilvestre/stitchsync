@@ -38,7 +38,21 @@ class PetDetailsScreen extends StatelessWidget {
             return '${context.tr('Gender')}: $localizedGender';
           }
           if (lower.startsWith('dob:')) {
-            return '${context.tr('DOB')}:${piece.substring(piece.indexOf(':') + 1)}';
+            final rawDob = piece.substring(piece.indexOf(':') + 1).trim();
+            final match = RegExp(r'^(\d{1,2})\/(\d{1,2})\/(\d{4})$').firstMatch(rawDob);
+            if (match != null) {
+              final first = int.tryParse(match.group(1)!);
+              final second = int.tryParse(match.group(2)!);
+              final year = int.tryParse(match.group(3)!);
+              if (first != null && second != null && year != null) {
+                final day = first > 12 ? first : second;
+                final month = first > 12 ? second : first;
+                final dd = day.toString().padLeft(2, '0');
+                final mm = month.toString().padLeft(2, '0');
+                return '${context.tr('DOB')}: $dd/$mm/$year';
+              }
+            }
+            return '${context.tr('DOB')}: $rawDob';
           }
           if (lower.startsWith('notes:')) {
             return '${context.tr('Notes')}:${piece.substring(piece.indexOf(':') + 1)}';
@@ -180,13 +194,14 @@ class PetDetailsScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        Row(
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
                           children: [
                             _InfoChip(
                               icon: Icons.cake_outlined,
                               text: ageLabel,
                             ),
-                            const SizedBox(width: 10),
                             _InfoChip(
                               icon: Icons.group_outlined,
                               text: '$familyMemberCount ${context.tr('family members')}',

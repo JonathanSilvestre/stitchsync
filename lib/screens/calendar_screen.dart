@@ -126,7 +126,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   String _eventLocation(Map<String, dynamic> data) {
     final category = (data['category'] as String?)?.trim();
     if (category != null && category.isNotEmpty) {
-      return '${context.tr('Category')}: ${category[0].toUpperCase()}${category.substring(1)}';
+      return '${context.tr('Category')}: ${context.tr(category)}';
     }
     return context.tr('Scheduled activity');
   }
@@ -684,7 +684,9 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
                 final chip =
                   completed
                     ? context.tr('DONE')
-                    : (category != null && category.isNotEmpty ? category.toUpperCase() : null);
+                    : (category != null && category.isNotEmpty
+                        ? context.tr(category).toUpperCase()
+                        : null);
 
                 final baseNote = note != null && note.isNotEmpty ? note : null;
                 final completionNote = completed
@@ -1063,7 +1065,7 @@ class _CalendarTopBar extends StatelessWidget {
             ),
           ),
         ),
-        const Icon(Icons.notifications_none_rounded, color: Color(0xFFA3AAC4), size: 30),
+        const Icon(Icons.pets_rounded, color: Color(0xFFA3AAC4), size: 30),
       ],
     );
   }

@@ -7,6 +7,7 @@ class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService.instance;
+  static const String _birthdayAutoCategory = 'Birthday';
 
   Future<String?> _resolveCurrentUsername() async {
     final uid = _auth.currentUser?.uid;
@@ -30,6 +31,84 @@ class EventService {
 
   CollectionReference<Map<String, dynamic>> _eventsCollection(String familyId) {
     return _firestore.collection('families').doc(familyId).collection('events');
+  }
+
+  DateTime _safeDate(int year, int month, int day, {int hour = 9, int minute = 0}) {
+    final maxDay = DateTime(year, month + 1, 0).day;
+    final clampedDay = day > maxDay ? maxDay : day;
+    return DateTime(year, month, clampedDay, hour, minute);
+  }
+
+  DateTime _nextBirthdayAnchor(DateTime birthDate) {
+    final now = DateTime.now();
+    var candidate = _safeDate(now.year, birthDate.month, birthDate.day);
+    if (!candidate.isAfter(now)) {
+      candidate = _safeDate(now.year + 1, birthDate.month, birthDate.day);
+    }
+    return candidate;
+  }
+
+  Future<void> _deleteAutoBirthdayEvents({
+    required String familyId,
+    required String petId,
+  }) async {
+    final query = await _eventsCollection(familyId)
+        .where('pet_id', isEqualTo: petId)
+        .where(
+          'category',
+          whereIn: <String>[_birthdayAutoCategory, 'birthday_auto'],
+        )
+        .get();
+
+    if (query.docs.isEmpty) {
+      return;
+    }
+
+    for (var i = 0; i < query.docs.length; i += 100) {
+      final end = (i + 100) > query.docs.length ? query.docs.length : i + 100;
+      final batch = _firestore.batch();
+      final ids = <String>[];
+      for (final doc in query.docs.sublist(i, end)) {
+        ids.add(doc.id);
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      for (final id in ids) {
+        await _notificationService.cancelEventReminder(familyId: familyId, eventId: id);
+      }
+    }
+  }
+
+  Future<void> upsertPetBirthdayAutoEvent({
+    required String familyId,
+    required String petId,
+    required String petName,
+    required DateTime? birthDate,
+  }) async {
+    final cleanFamilyId = familyId.trim();
+    final cleanPetId = petId.trim();
+    if (cleanFamilyId.isEmpty || cleanPetId.isEmpty) {
+      return;
+    }
+
+    await _deleteAutoBirthdayEvents(familyId: cleanFamilyId, petId: cleanPetId);
+
+    if (birthDate == null) {
+      return;
+    }
+
+    final cleanPetName = petName.trim().isEmpty ? 'Pet' : petName.trim();
+    final anchor = _nextBirthdayAnchor(birthDate);
+
+    await addEvent(
+      familyId: cleanFamilyId,
+      petId: cleanPetId,
+      title: '$cleanPetName Birthday',
+      scheduledAt: anchor,
+      note: '',
+      category: _birthdayAutoCategory,
+      recurrence: 'yearly',
+    );
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamTodayEvents({

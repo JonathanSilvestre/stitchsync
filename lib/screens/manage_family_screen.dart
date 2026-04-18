@@ -188,10 +188,6 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.more_vert, color: _textMuted),
-                      ),
                     ],
                   ),
                 ),

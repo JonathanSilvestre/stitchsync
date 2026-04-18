@@ -337,11 +337,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            IconButton(
-                              onPressed: () {},
-                              icon: const Icon(Icons.more_vert,
-                                  color: _textMuted, size: 24),
-                            ),
                           ],
                         ),
                       ),
@@ -787,8 +782,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Widget _buildLastUpdated() {
+    final now = DateTime.now();
+    final dd = now.day.toString().padLeft(2, '0');
+    final mm = now.month.toString().padLeft(2, '0');
+    final yyyy = now.year.toString();
     return Text(
-      'Last updated on ${DateTime.now().toString().split(' ')[0]}',
+      '${context.tr('Last updated on')}: $dd/$mm/$yyyy',
       textAlign: TextAlign.center,
       style: const TextStyle(
         color: _textMuted,

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_i18n.dart';
 import '../services/notification_service.dart';
@@ -38,6 +39,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   TimeOfDay _quietEnd = const TimeOfDay(hour: 7, minute: 0);
 
   bool _isLoadingPreferences = true;
+  final Set<Future<void>> _pendingSaves = <Future<void>>{};
+
+  static const String _prefPushEnabled = 'notifications.push_enabled';
+  static const String _prefFeedWater = 'notifications.feed_water';
+  static const String _prefWalksExercise = 'notifications.walks_exercise';
+  static const String _prefMedicationVet = 'notifications.medication_vet';
+  static const String _prefFamilyUpdates = 'notifications.family_updates';
+  static const String _prefQuietHoursEnabled = 'notifications.quiet_hours_enabled';
+  static const String _prefQuietHoursStart = 'notifications.quiet_hours_start';
+  static const String _prefQuietHoursEnd = 'notifications.quiet_hours_end';
 
   @override
   void initState() {
@@ -48,11 +59,81 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _bootstrap() async {
     await _notificationService.initialize();
     await _notificationService.requestPermissions();
+    await _loadPreferencesFromLocal();
     await _loadPreferences();
   }
 
+  Future<void> _loadPreferencesFromLocal() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _pushEnabled = prefs.getBool(_prefPushEnabled) ?? _pushEnabled;
+      _feedWater = prefs.getBool(_prefFeedWater) ?? _feedWater;
+      _walksExercise = prefs.getBool(_prefWalksExercise) ?? _walksExercise;
+      _medicationVet = prefs.getBool(_prefMedicationVet) ?? _medicationVet;
+      _familyUpdates = prefs.getBool(_prefFamilyUpdates) ?? _familyUpdates;
+      _quietHoursEnabled =
+          prefs.getBool(_prefQuietHoursEnabled) ?? _quietHoursEnabled;
+      _quietStart =
+          _timeFromString(prefs.getString(_prefQuietHoursStart)) ?? _quietStart;
+      _quietEnd = _timeFromString(prefs.getString(_prefQuietHoursEnd)) ?? _quietEnd;
+    });
+  }
+
+  Future<void> _savePreferencesToLocal(Map<String, dynamic> updates) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    for (final entry in updates.entries) {
+      switch (entry.key) {
+        case 'push_enabled':
+          await prefs.setBool(_prefPushEnabled, _boolFromDynamic(entry.value, _pushEnabled));
+          break;
+        case 'feed_water':
+          await prefs.setBool(_prefFeedWater, _boolFromDynamic(entry.value, _feedWater));
+          break;
+        case 'walks_exercise':
+          await prefs.setBool(
+            _prefWalksExercise,
+            _boolFromDynamic(entry.value, _walksExercise),
+          );
+          break;
+        case 'medication_vet':
+          await prefs.setBool(
+            _prefMedicationVet,
+            _boolFromDynamic(entry.value, _medicationVet),
+          );
+          break;
+        case 'family_updates':
+          await prefs.setBool(
+            _prefFamilyUpdates,
+            _boolFromDynamic(entry.value, _familyUpdates),
+          );
+          break;
+        case 'quiet_hours_enabled':
+          await prefs.setBool(
+            _prefQuietHoursEnabled,
+            _boolFromDynamic(entry.value, _quietHoursEnabled),
+          );
+          break;
+        case 'quiet_hours_start':
+          await prefs.setString(_prefQuietHoursStart, entry.value.toString());
+          break;
+        case 'quiet_hours_end':
+          await prefs.setString(_prefQuietHoursEnd, entry.value.toString());
+          break;
+      }
+    }
+  }
+
   Future<void> _loadPreferences() async {
-    final user = _auth.currentUser;
+    final user = _auth.currentUser ??
+        await _auth
+            .authStateChanges()
+            .firstWhere((u) => u != null)
+            .timeout(const Duration(seconds: 2), onTimeout: () => null);
     if (user == null) {
       if (!mounted) {
         return;
@@ -66,9 +147,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       final doc = await _firestore.collection('users').doc(user.uid).get();
       final data = doc.data() ?? <String, dynamic>{};
-      final prefsRaw = data['notification_preferences'];
-      final prefs = prefsRaw is Map<String, dynamic>
-          ? prefsRaw
+        final prefsRaw = data['notification_preferences'];
+        final prefs = prefsRaw is Map
+          ? Map<String, dynamic>.from(prefsRaw)
           : <String, dynamic>{};
 
       if (!mounted) {
@@ -76,17 +157,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       }
 
       setState(() {
-        _pushEnabled = (prefs['push_enabled'] as bool?) ?? _pushEnabled;
-        _feedWater = (prefs['feed_water'] as bool?) ?? _feedWater;
-        _walksExercise = (prefs['walks_exercise'] as bool?) ?? _walksExercise;
-        _medicationVet = (prefs['medication_vet'] as bool?) ?? _medicationVet;
-        _familyUpdates = (prefs['family_updates'] as bool?) ?? _familyUpdates;
-        _quietHoursEnabled =
-            (prefs['quiet_hours_enabled'] as bool?) ?? _quietHoursEnabled;
-        _quietStart = _timeFromString(prefs['quiet_hours_start'] as String?) ??
+        _pushEnabled = _boolFromDynamic(prefs['push_enabled'], _pushEnabled);
+        _feedWater = _boolFromDynamic(prefs['feed_water'], _feedWater);
+        _walksExercise = _boolFromDynamic(
+          prefs['walks_exercise'],
+          _walksExercise,
+        );
+        _medicationVet = _boolFromDynamic(prefs['medication_vet'], _medicationVet);
+        _familyUpdates = _boolFromDynamic(prefs['family_updates'], _familyUpdates);
+        _quietHoursEnabled = _boolFromDynamic(
+          prefs['quiet_hours_enabled'],
+          _quietHoursEnabled,
+        );
+        _quietStart = _timeFromString(prefs['quiet_hours_start']?.toString()) ??
             _quietStart;
         _quietEnd =
-            _timeFromString(prefs['quiet_hours_end'] as String?) ?? _quietEnd;
+            _timeFromString(prefs['quiet_hours_end']?.toString()) ?? _quietEnd;
         _isLoadingPreferences = false;
       });
     } catch (_) {
@@ -102,6 +188,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  bool _boolFromDynamic(dynamic value, bool fallback) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return fallback;
+  }
   TimeOfDay? _timeFromString(String? value) {
     if (value == null || value.trim().isEmpty) {
       return null;
@@ -137,6 +241,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _savePreferences(Map<String, dynamic> updates) async {
+    await _savePreferencesToLocal(updates);
+
     final user = _auth.currentUser;
     if (user == null) {
       throw Exception('No active user');
@@ -158,8 +264,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _notificationService.syncUpcomingEventReminders();
   }
 
+  void _trackSave(Future<void> op) {
+    _pendingSaves.add(op);
+    op.whenComplete(() {
+      _pendingSaves.remove(op);
+    });
+  }
+
+  Future<void> _flushPendingSaves() async {
+    if (_pendingSaves.isEmpty) {
+      return;
+    }
+    await Future.wait(_pendingSaves.toList(growable: false));
+  }
+
   Future<void> _toggleWithRollback({
-    required bool oldValue,
     required ValueChanged<bool> localSet,
     required String storageKey,
     required bool newValue,
@@ -172,9 +291,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (!mounted) {
         return;
       }
-      localSet(oldValue);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not save notification setting.'))),
+        SnackBar(content: Text('${context.tr('Could not save notification setting.')} (cloud)')),
       );
     }
   }
@@ -231,68 +349,82 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF08142A),
-                    _bg,
-                    const Color(0xFF030A17),
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+        _flushPendingSaves().then((_) {
+          if (!mounted) {
+            return;
+          }
+          Navigator.of(this.context).pop();
+        });
+      },
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFF08142A),
+                      _bg,
+                      const Color(0xFF030A17),
+                    ],
+                    stops: const [0.0, 0.45, 1.0],
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            top: -140,
-            right: -90,
-            child: Container(
-              width: 340,
-              height: 340,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    _secondary.withValues(alpha: 0.18),
-                    _secondary.withValues(alpha: 0),
-                  ],
+            Positioned(
+              top: -140,
+              right: -90,
+              child: Container(
+                width: 340,
+                height: 340,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      _secondary.withValues(alpha: 0.18),
+                      _secondary.withValues(alpha: 0),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildTopBar(context),
-                Expanded(
-                  child: _isLoadingPreferences
-                      ? const Center(child: CircularProgressIndicator())
-                      : SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildPushHeader(),
-                              const SizedBox(height: 16),
-                              _buildPushCard(),
-                              const SizedBox(height: 24),
-                              _buildQuietHoursCard(),
-                            ],
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildTopBar(context),
+                  Expanded(
+                    child: _isLoadingPreferences
+                        ? const Center(child: CircularProgressIndicator())
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildPushHeader(),
+                                const SizedBox(height: 16),
+                                _buildPushCard(),
+                                const SizedBox(height: 24),
+                                _buildQuietHoursCard(),
+                              ],
+                            ),
                           ),
-                        ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -307,7 +439,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           child: Row(
             children: [
               IconButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () async {
+                  final navigator = Navigator.of(this.context);
+                  await _flushPendingSaves();
+                  if (!mounted) {
+                    return;
+                  }
+                  navigator.pop();
+                },
                 icon: const Icon(
                   Icons.arrow_back_rounded,
                   color: _primary,
@@ -364,12 +503,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         Switch.adaptive(
           value: _pushEnabled,
           onChanged: (value) {
-            final oldPush = _pushEnabled;
-            final oldFeedWater = _feedWater;
-            final oldWalksExercise = _walksExercise;
-            final oldMedicationVet = _medicationVet;
-            final oldFamilyUpdates = _familyUpdates;
-
             setState(() {
               _pushEnabled = value;
               if (!value) {
@@ -380,7 +513,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               }
             });
 
-            _savePreferences({
+            _trackSave(_savePreferences({
               'push_enabled': value,
               if (!value) 'feed_water': false,
               if (!value) 'walks_exercise': false,
@@ -390,17 +523,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               if (!mounted) {
                 return;
               }
-              setState(() {
-                _pushEnabled = oldPush;
-                _feedWater = oldFeedWater;
-                _walksExercise = oldWalksExercise;
-                _medicationVet = oldMedicationVet;
-                _familyUpdates = oldFamilyUpdates;
-              });
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(context.tr('Could not save notification setting.'))),
+                SnackBar(content: Text('${context.tr('Could not save notification setting.')} (cloud)')),
               );
-            });
+            }).then((_) {}));
           },
           activeThumbColor: const Color(0xFFD9ECFF),
           activeTrackColor: _primary,
@@ -428,12 +554,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             value: _feedWater,
             onChanged: !_pushEnabled
                 ? null
-                : (value) => _toggleWithRollback(
-                      oldValue: _feedWater,
+                : (value) => _trackSave(_toggleWithRollback(
                       localSet: (v) => setState(() => _feedWater = v),
                       storageKey: 'feed_water',
                       newValue: value,
-                    ),
+                    )),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -444,12 +569,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             value: _walksExercise,
             onChanged: !_pushEnabled
                 ? null
-                : (value) => _toggleWithRollback(
-                      oldValue: _walksExercise,
+                : (value) => _trackSave(_toggleWithRollback(
                       localSet: (v) => setState(() => _walksExercise = v),
                       storageKey: 'walks_exercise',
                       newValue: value,
-                    ),
+                    )),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -460,12 +584,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             value: _medicationVet,
             onChanged: !_pushEnabled
                 ? null
-                : (value) => _toggleWithRollback(
-                      oldValue: _medicationVet,
+                : (value) => _trackSave(_toggleWithRollback(
                       localSet: (v) => setState(() => _medicationVet = v),
                       storageKey: 'medication_vet',
                       newValue: value,
-                    ),
+                    )),
           ),
           const SizedBox(height: 12),
           _PushCategoryTile(
@@ -476,12 +599,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             value: _familyUpdates,
             onChanged: !_pushEnabled
                 ? null
-                : (value) => _toggleWithRollback(
-                      oldValue: _familyUpdates,
+                : (value) => _trackSave(_toggleWithRollback(
                       localSet: (v) => setState(() => _familyUpdates = v),
                       storageKey: 'family_updates',
                       newValue: value,
-                    ),
+                    )),
           ),
         ],
       ),
@@ -540,22 +662,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   Switch.adaptive(
                     value: _quietHoursEnabled,
                     onChanged: (value) {
-                      final oldValue = _quietHoursEnabled;
                       setState(() {
                         _quietHoursEnabled = value;
                       });
 
-                      _savePreferences({'quiet_hours_enabled': value}).catchError((_) {
+                      _trackSave(_savePreferences({'quiet_hours_enabled': value}).catchError((_) {
                         if (!mounted) {
                           return;
                         }
-                        setState(() {
-                          _quietHoursEnabled = oldValue;
-                        });
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(context.tr('Could not save quiet hours.'))),
+                          SnackBar(content: Text('${context.tr('Could not save quiet hours.')} (cloud)')),
                         );
-                      });
+                      }).then((_) {}));
                     },
                     activeThumbColor: const Color(0xFFD9ECFF),
                     activeTrackColor: _primary,

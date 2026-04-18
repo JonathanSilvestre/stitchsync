@@ -72,14 +72,33 @@ class NotificationService {
     final doc = await _firestore.collection('users').doc(uid).get();
     final data = doc.data() ?? <String, dynamic>{};
     final raw = data['notification_preferences'];
-    if (raw is Map<String, dynamic>) {
-      return raw;
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
     }
     return <String, dynamic>{};
   }
 
+  bool _boolFromDynamic(dynamic value, bool fallback) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return fallback;
+  }
+
   bool _isCategoryEnabled(Map<String, dynamic> prefs, String category, String title) {
-    final pushEnabled = (prefs['push_enabled'] as bool?) ?? true;
+    final pushEnabled = _boolFromDynamic(prefs['push_enabled'], true);
     if (!pushEnabled) {
       return false;
     }
@@ -90,29 +109,29 @@ class NotificationService {
         lookup.contains('water') ||
         lookup.contains('food') ||
         lookup.contains('meal')) {
-      return (prefs['feed_water'] as bool?) ?? true;
+      return _boolFromDynamic(prefs['feed_water'], true);
     }
 
     if (lookup.contains('walk') || lookup.contains('exercise')) {
-      return (prefs['walks_exercise'] as bool?) ?? true;
+      return _boolFromDynamic(prefs['walks_exercise'], true);
     }
 
     if (lookup.contains('med') ||
         lookup.contains('vet') ||
         lookup.contains('vaccine') ||
         lookup.contains('pill')) {
-      return (prefs['medication_vet'] as bool?) ?? true;
+      return _boolFromDynamic(prefs['medication_vet'], true);
     }
 
     if (lookup.contains('family') || lookup.contains('update')) {
-      return (prefs['family_updates'] as bool?) ?? true;
+      return _boolFromDynamic(prefs['family_updates'], true);
     }
 
     return true;
   }
 
   TimeOfDayPair? _quietHours(Map<String, dynamic> prefs) {
-    final enabled = (prefs['quiet_hours_enabled'] as bool?) ?? false;
+    final enabled = _boolFromDynamic(prefs['quiet_hours_enabled'], false);
     if (!enabled) {
       return null;
     }
@@ -174,7 +193,12 @@ class NotificationService {
   }) async {
     await initialize();
 
-    final reminderAt = scheduledAt.subtract(const Duration(minutes: 5));
+    final categoryKey = category.trim().toLowerCase();
+    final isBirthdayAuto =
+      categoryKey == 'birthday' || categoryKey == 'birthday_auto';
+    final reminderAt = isBirthdayAuto
+        ? scheduledAt.subtract(const Duration(days: 1))
+        : scheduledAt.subtract(const Duration(minutes: 5));
     if (scheduledAt.isBefore(DateTime.now())) {
       await cancelEventReminder(familyId: familyId, eventId: eventId);
       return;
@@ -209,8 +233,10 @@ class NotificationService {
 
     await _plugin.zonedSchedule(
       id: _notificationId(familyId, eventId),
-      title: 'Upcoming event',
-      body: '$title starts in 5 minutes.',
+      title: isBirthdayAuto ? 'Birthday reminder' : 'Upcoming event',
+      body: isBirthdayAuto
+          ? '$title is tomorrow.'
+          : '$title starts in 5 minutes.',
       scheduledDate: tz.TZDateTime.from(scheduleDate, tz.local),
       notificationDetails:
           NotificationDetails(android: androidDetails, iOS: iosDetails),

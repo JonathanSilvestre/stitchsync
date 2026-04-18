@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
+import '../services/event_service.dart';
 import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
 import 'home_screen.dart';
@@ -23,8 +24,10 @@ class AddNewPetScreen extends StatefulWidget {
 
 class _AddNewPetScreenState extends State<AddNewPetScreen> {
   final PetService _petService = PetService();
+  final EventService _eventService = EventService();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _breedController = TextEditingController();
+  final FocusNode _breedFocusNode = FocusNode();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -33,6 +36,73 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   static const Color _textMain = Color(0xFFDEE5FF);
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
+
+  static const List<String> _dogBreeds = [
+    'Affenpinscher',
+    'Akita',
+    'Alaskan Malamute',
+    'American Bulldog',
+    'American Pit Bull Terrier',
+    'Australian Cattle Dog',
+    'Australian Shepherd',
+    'Basenji',
+    'Basset Hound',
+    'Beagle',
+    'Bernese Mountain Dog',
+    'Bichon Frise',
+    'Bloodhound',
+    'Border Collie',
+    'Boston Terrier',
+    'Boxer',
+    'Brittany',
+    'Bull Terrier',
+    'Bulldog',
+    'Cane Corso',
+    'Cavalier King Charles Spaniel',
+    'Chihuahua',
+    'Chow Chow',
+    'Cocker Spaniel',
+    'Collie',
+    'Dachshund',
+    'Dalmatian',
+    'Doberman Pinscher',
+    'English Setter',
+    'French Bulldog',
+    'German Shepherd',
+    'German Shorthaired Pointer',
+    'Golden Retriever',
+    'Great Dane',
+    'Greyhound',
+    'Havanese',
+    'Irish Setter',
+    'Jack Russell Terrier',
+    'Labrador Retriever',
+    'Lhasa Apso',
+    'Maltese',
+    'Miniature Pinscher',
+    'Miniature Schnauzer',
+    'Newfoundland',
+    'Papillon',
+    'Pekingese',
+    'Pembroke Welsh Corgi',
+    'Pomeranian',
+    'Poodle',
+    'Pug',
+    'Rottweiler',
+    'Saint Bernard',
+    'Samoyed',
+    'Scottish Terrier',
+    'Shetland Sheepdog',
+    'Shiba Inu',
+    'Shih Tzu',
+    'Siberian Husky',
+    'Staffordshire Bull Terrier',
+    'Weimaraner',
+    'West Highland White Terrier',
+    'Whippet',
+    'Yorkshire Terrier',
+    'Mixed Breed',
+  ];
 
   bool _isMale = true;
   bool _isKg = true;
@@ -46,6 +116,31 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   void initState() {
     super.initState();
     _hydrateFromInitialPetData();
+    _breedController.addListener(_onBreedChanged);
+  }
+
+  void _onBreedChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  List<String> _matchingBreeds(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) {
+      return const <String>[];
+    }
+
+    final startsWith = _dogBreeds
+        .where((breed) => breed.toLowerCase().startsWith(q))
+        .toList(growable: false);
+    final contains = _dogBreeds
+        .where((breed) => !breed.toLowerCase().startsWith(q))
+        .where((breed) => breed.toLowerCase().contains(q))
+        .toList(growable: false);
+
+    return [...startsWith, ...contains].take(6).toList(growable: false);
   }
 
   void _hydrateFromInitialPetData() {
@@ -96,10 +191,13 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
         final value = piece.substring(piece.indexOf(':') + 1).trim();
         final match = RegExp(r'^(\d{1,2})\/(\d{1,2})\/(\d{4})$').firstMatch(value);
         if (match != null) {
-          final month = int.tryParse(match.group(1)!);
-          final day = int.tryParse(match.group(2)!);
+          final first = int.tryParse(match.group(1)!);
+          final second = int.tryParse(match.group(2)!);
           final year = int.tryParse(match.group(3)!);
-          if (month != null && day != null && year != null) {
+          if (first != null && second != null && year != null) {
+            // Accept both legacy mm/dd/yyyy and new dd/mm/yyyy.
+            final day = first > 12 ? first : second;
+            final month = first > 12 ? second : first;
             _birthDate = DateTime(year, month, day);
           }
         }
@@ -118,8 +216,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
   @override
   void dispose() {
+    _breedController.removeListener(_onBreedChanged);
     _nameController.dispose();
     _breedController.dispose();
+    _breedFocusNode.dispose();
     _weightController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -264,10 +364,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
     pieces.add('Gender: ${_isMale ? 'Male' : 'Female'}');
 
     if (_birthDate != null) {
-      final mm = _birthDate!.month.toString().padLeft(2, '0');
       final dd = _birthDate!.day.toString().padLeft(2, '0');
+      final mm = _birthDate!.month.toString().padLeft(2, '0');
       final yy = _birthDate!.year.toString();
-      pieces.add('DOB: $mm/$dd/$yy');
+      pieces.add('DOB: $dd/$mm/$yy');
     }
 
     final bio = _notesController.text.trim();
@@ -304,14 +404,28 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
           notes: _composeNotes(),
           avatarId: _selectedAvatarId,
         );
+
+        await _eventService.upsertPetBirthdayAutoEvent(
+          familyId: widget.familyId,
+          petId: widget.petId!,
+          petName: name,
+          birthDate: _birthDate,
+        );
       } else {
-        await _petService.addPet(
+        final createdPetId = await _petService.addPet(
           familyId: widget.familyId,
           name: name,
           breed: breed,
           age: _resolveAgeFromBirthDate(),
           notes: _composeNotes(),
           avatarId: _selectedAvatarId,
+        );
+
+        await _eventService.upsertPetBirthdayAutoEvent(
+          familyId: widget.familyId,
+          petId: createdPetId,
+          petName: name,
+          birthDate: _birthDate,
         );
       }
 
@@ -364,13 +478,13 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
   String _birthDateLabel() {
     if (_birthDate == null) {
-      return 'mm/dd/yyyy';
+      return 'dd/mm/yyyy';
     }
 
-    final mm = _birthDate!.month.toString().padLeft(2, '0');
     final dd = _birthDate!.day.toString().padLeft(2, '0');
+    final mm = _birthDate!.month.toString().padLeft(2, '0');
     final yy = _birthDate!.year.toString();
-    return '$mm/$dd/$yy';
+    return '$dd/$mm/$yy';
   }
 
   @override
@@ -507,14 +621,64 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         const SizedBox(height: 12),
                         _FieldCard(
                           label: context.tr('BREED'),
-                          child: TextField(
-                            controller: _breedController,
-                            style: const TextStyle(color: _textMain, fontSize: 18),
-                            decoration: InputDecoration(
-                              prefixIcon: const Icon(Icons.search, color: _primary),
-                              hintText: context.tr('Search breed...'),
-                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
-                            ),
+                          child: Column(
+                            children: [
+                              TextField(
+                                controller: _breedController,
+                                focusNode: _breedFocusNode,
+                                style: const TextStyle(color: _textMain, fontSize: 18),
+                                decoration: InputDecoration(
+                                  prefixIcon: const Icon(Icons.search, color: _primary),
+                                  hintText: context.tr('Search breed...'),
+                                  hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
+                                ),
+                              ),
+                              if (_breedFocusNode.hasFocus &&
+                                  _matchingBreeds(_breedController.text).isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  constraints: const BoxConstraints(maxHeight: 190),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF09142A),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: _primary.withValues(alpha: 0.25),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    shrinkWrap: true,
+                                    itemCount: _matchingBreeds(_breedController.text).length,
+                                    separatorBuilder: (context, index) => Divider(
+                                      height: 1,
+                                      color: _primary.withValues(alpha: 0.10),
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final suggestion = _matchingBreeds(_breedController.text)[index];
+                                      return ListTile(
+                                        dense: true,
+                                        title: Text(
+                                          suggestion,
+                                          style: const TextStyle(
+                                            color: _textMain,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          _breedController.text = suggestion;
+                                          _breedController.selection = TextSelection.fromPosition(
+                                            TextPosition(offset: suggestion.length),
+                                          );
+                                          _breedFocusNode.unfocus();
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         const SizedBox(height: 12),

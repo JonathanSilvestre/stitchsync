@@ -1,96 +1,101 @@
 # StitchSync
 
-Cross-platform mobile app for collaborative pet care management.
+Cross-platform Flutter app for collaborative pet care management.
 
-StitchSync helps families organize routines, events, and responsibilities for their pets in one place, with real-time sync and local reminders.
+StitchSync helps families coordinate routines, health tasks, and reminders for shared pets in one place, with Firebase-backed sync and local notifications.
 
-## Table of contents
+## Contents
 
-- [Overview](#overview)
-- [Core features](#core-features)
-- [Tech stack](#tech-stack)
-- [Architecture](#architecture)
+- [Why StitchSync](#why-stitchsync)
+- [Feature highlights](#feature-highlights)
+- [Technology stack](#technology-stack)
+- [Architecture and design](#architecture-and-design)
 - [Project structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Installation and run](#installation-and-run)
-- [Firebase setup](#firebase-setup)
-- [Notifications](#notifications)
-- [Key user flows](#key-user-flows)
-- [Quality checklist](#quality-checklist)
-- [Suggested roadmap](#suggested-roadmap)
+- [Getting started](#getting-started)
+- [Firebase configuration](#firebase-configuration)
+- [Notifications behavior](#notifications-behavior)
+- [Main user flows](#main-user-flows)
+- [Quality and validation](#quality-and-validation)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
 
-## Overview
+## Why StitchSync
 
-StitchSync is designed to solve a common problem: keeping daily pet care synchronized when multiple people are involved.
+When multiple people care for the same pet, routines can become fragmented.
 
-The app centralizes:
+StitchSync solves this by centralizing:
 
-- User account management.
-- Family and member management.
-- Shared pet management.
-- Event scheduling (feeding, walks, medication, vet visits, etc.).
-- Category-based local reminders.
+- Shared pet ownership and family collaboration.
+- Event planning with recurrence support.
+- Category-based reminders.
+- User profile and language preferences.
+- Real-time updates across members.
 
-## Core features
+## Feature highlights
 
-### 1. Authentication and profile
+### Authentication and profile
 
-- Sign up and login with Firebase Authentication.
-- Editable user profile.
-- Profile avatar picker (8 options).
-- Language preference (Spanish / English).
+- Firebase Authentication sign up and login.
+- Editable profile data.
+- Avatar selection for users.
+- App language selector (Spanish and English).
 
-### 2. Family collaboration
+### Family collaboration
 
-- Create and join families using invitation codes.
-- Role management (owner, admin, member).
-- Active member visibility.
+- Create and join families with invitation codes.
+- Role support (owner, admin, member).
+- Visibility of active members.
 
-### 3. Pet management
+### Pet lifecycle management
 
-- Create, edit, and manage pets.
+- Create, update, and manage pets.
 - Pet avatar selection.
-- Active pet context for event synchronization.
+- Shared context for events per active pet.
+- Breed autocomplete while typing in pet forms.
 
-### 4. Events and reminders
+### Events and reminders
 
-- Create categorized events.
-- Recurrence support.
-- Local reminders scheduled 5 minutes before each event.
-- Automatic reschedule/cancel when events are edited, completed, or deleted.
+- Categorized event creation.
+- Recurring events.
+- Automatic birthday special event generation.
+- Local reminders with category preference filtering.
+- Automatic reminder reschedule on event updates.
 
-### 5. Notification preferences
+### Notification preferences
 
-- Global push enable/disable.
-- Category-level control:
-  - Feeding & Water
-  - Walks & Exercise
-  - Medication & Vet
+- Global notifications on or off.
+- Category-level configuration:
+  - Feeding and Water
+  - Walks and Exercise
+  - Medication and Vet
   - Family Updates
-- Configurable Quiet Hours.
+- Quiet hours configuration.
+- Preference persistence and sync behavior.
 
-## Tech stack
+## Technology stack
 
-- Flutter (Dart)
+- Flutter and Dart
 - Firebase Core
 - Firebase Authentication
 - Cloud Firestore
 - flutter_local_notifications
-- timezone + flutter_timezone
+- timezone and flutter_timezone
 
-## Architecture
+## Architecture and design
 
-The app uses a lightweight layered structure:
+StitchSync follows a lightweight layered structure:
 
-- screens: UI and navigation flows.
-- services: business logic and Firebase access.
-- utils: catalogs and UI helper utilities (for example, avatars).
+- screens: presentation layer and navigation flows.
+- services: domain logic and Firebase access.
+- utils: shared UI catalogs and helpers.
+- l10n: in-app localization resources.
 
-Patterns used:
+Key design decisions:
 
-- Stateful Widgets for screen state.
-- Service classes to encapsulate domain logic.
-- Firestore as the shared source of truth.
+- Stateful widgets for local screen state.
+- Service-driven domain operations.
+- Firestore as shared source of truth.
+- Local persistence for resilient notification preferences.
 
 ## Project structure
 
@@ -98,13 +103,13 @@ Patterns used:
 lib/
   main.dart
   firebase_options.dart
+  l10n/
+    app_i18n.dart
   screens/
-    account_settings_screen.dart
-    profile_screen.dart
-    family_screen.dart
-    manage_family_screen.dart
-    manage_pets_screen.dart
+    home_screen.dart
+    calendar_screen.dart
     notifications_screen.dart
+    add_new_pet_screen.dart
     ...
   services/
     auth_service.dart
@@ -117,14 +122,16 @@ lib/
     user_avatar_catalog.dart
 ```
 
-## Prerequisites
+## Getting started
 
-- Flutter SDK installed.
-- Android Studio or VS Code with Flutter/Dart extensions.
-- Firebase project.
-- Physical device or Android/iOS emulator.
+### Prerequisites
 
-## Installation and run
+- Flutter SDK installed and available in PATH.
+- Android Studio or VS Code with Flutter and Dart extensions.
+- A Firebase project.
+- Physical device or emulator.
+
+### Installation
 
 1. Clone the repository.
 2. Install dependencies:
@@ -133,75 +140,87 @@ lib/
 flutter pub get
 ```
 
-3. Verify Firebase configuration.
+3. Confirm Firebase files are configured for your environment.
 4. Run the app:
 
 ```bash
 flutter run
 ```
 
-5. Run static analysis:
+5. Validate static analysis:
 
 ```bash
 flutter analyze
 ```
 
-## Firebase setup
+## Firebase configuration
 
-This project requires Firebase for authentication and database.
+This project requires Firebase for authentication and Firestore data.
 
-General steps:
+Recommended setup flow:
 
 1. Create a Firebase project in Firebase Console.
-2. Register Android/iOS apps.
-3. Add platform config files.
+2. Register Android and iOS apps.
+3. Add platform configuration files.
 4. Run FlutterFire Configure to generate Firebase options.
-5. Validate Firestore rules for your environment (development/production).
+5. Review Firestore security rules for your stage (development or production).
 
-Note:
-The repository already contains related files such as firebase.json, firestore.rules, and firebase_options.dart.
+Repository includes related configuration files such as:
 
-## Notifications
+- firebase.json
+- firestore.rules
+- lib/firebase_options.dart
 
-StitchSync uses local notifications for event reminders.
+## Notifications behavior
 
-Key behavior:
+StitchSync schedules local reminders for upcoming events.
 
-- Scheduled 5 minutes before the event.
-- Filtered by category preferences.
-- Respect Quiet Hours.
-- Upcoming reminders are synced on app startup.
+Current behavior:
 
-Android details:
+- Event reminders are planned before scheduled event time.
+- Filtering is applied based on saved category preferences.
+- Quiet hours are respected by notification logic.
+- Reminder plans are refreshed when events are edited, completed, or removed.
+- Birthday special reminders are managed with dedicated handling.
 
-- Exact alarms support.
-- Re-scheduling support after device reboot.
-- Runtime notification permissions based on Android version.
+Android notes:
 
-## Key user flows
+- Supports exact alarms.
+- Supports reminder restoration logic.
+- Handles runtime notification permission scenarios by OS version.
 
-- Sign up/Login -> Profile -> Create or join family -> Add pets -> Schedule events -> Receive reminders.
-- Account settings -> Update username/password/language/avatar.
-- Family management -> Manage members, roles, and shared data.
+## Main user flows
 
-## Quality checklist
+- Sign up or login -> complete profile -> create or join family -> add pets -> create events -> receive reminders.
+- Account settings -> update username, password, language, and avatar.
+- Family management -> invite members, manage roles, maintain shared data.
 
-Recommended before opening a Pull Request:
+## Quality and validation
 
-- Run `flutter analyze`.
-- Test full authentication flow.
-- Test profile saving (username, avatar, language).
-- Test pet and event CRUD.
-- Test local notifications on a physical device.
+Recommended before opening a pull request:
 
-## Suggested roadmap
+- Run flutter analyze and resolve warnings.
+- Verify complete authentication flow.
+- Validate profile updates and persistence.
+- Validate pet and event CRUD across screens.
+- Validate local notifications on a physical device.
+- Re-check localization in Spanish and English.
 
-- Full UI internationalization.
-- Unit tests for service layer.
-- Integration tests for critical flows.
-- Advanced multi-device synchronization.
-- Family activity dashboard.
+## Roadmap
 
----
+- Expand automated tests for service and UI flows.
+- Improve multi-device sync conflict handling.
+- Add richer family activity insights.
+- Extend accessibility and UX consistency.
+- Strengthen CI checks for lint, analyze, and tests.
 
-If you want to contribute, create a `feature/*` branch, document your changes, and open a Pull Request with functional details and testing evidence.
+## Contributing
+
+Contributions are welcome.
+
+1. Create a branch using feature or fix naming.
+2. Keep commits focused and descriptive.
+3. Document functional changes in the pull request.
+4. Include validation evidence (analyze, manual flow checks, and screenshots when relevant).
+
+For significant changes, open an issue first to align on scope and approach.

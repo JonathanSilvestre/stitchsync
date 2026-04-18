@@ -347,11 +347,11 @@ class _NewEventScreenState extends State<NewEventScreen> {
 
   String _dateLabel() {
     if (_selectedDate == null) {
-      return 'mm/dd/yyyy';
+      return 'dd/mm/yyyy';
     }
 
     final d = _selectedDate!;
-    return '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}/${d.year}';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
   String _timeLabel() {

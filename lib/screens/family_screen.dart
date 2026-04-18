@@ -640,7 +640,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                               ),
                             ),
                             const Icon(
-                              Icons.notifications_none,
+                              Icons.pets_rounded,
                               color: _textMuted,
                               size: 24,
                             ),

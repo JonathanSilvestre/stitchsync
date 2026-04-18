@@ -9,6 +9,7 @@ import '../services/event_service.dart';
 import '../services/family_service.dart';
 import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
+import '../utils/user_avatar_catalog.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'new_event_screen.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _auth = AuthService();
   final FamilyService _familyService = FamilyService();
   final PetService _petService = PetService();
@@ -754,6 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String familyId,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> pets,
     required int familyMemberCount,
+    required List<String> familyMemberAvatarIds,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> todayEvents,
   }) {
     QueryDocumentSnapshot<Map<String, dynamic>>? selectedPet;
@@ -843,6 +846,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         photoUrl: selectedPhoto,
                         avatarId: selectedAvatarId,
                         familyMemberCount: familyMemberCount,
+                        familyMemberAvatarIds: familyMemberAvatarIds,
                         onViewDetails: () => _openPetDetails(
                           petData: selectedData,
                           familyMemberCount: familyMemberCount,
@@ -1159,6 +1163,11 @@ class _HomeScreenState extends State<HomeScreen> {
             final selectedFamilyData = selectedFamily.data();
             final memberUids = (selectedFamilyData['member_uids'] as List<dynamic>?) ?? const [];
             final familyMemberCount = memberUids.length;
+            final orderedMemberUids = memberUids
+              .map((uid) => uid.toString().trim())
+              .where((uid) => uid.isNotEmpty)
+              .toList(growable: false);
+            final queryMemberUids = orderedMemberUids.take(10).toList(growable: false);
 
           if (_profileLoaded && _selectedFamilyId != familyId) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1169,47 +1178,68 @@ class _HomeScreenState extends State<HomeScreen> {
             });
           }
 
-          return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-            stream: _petService.streamPets(familyId),
-            builder: (context, petSnapshot) {
-              final pets = petSnapshot.data ?? const [];
-
-              if (petSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (_profileLoaded && pets.isNotEmpty) {
-                final validPet = _selectedPetId != null &&
-                    pets.any((pet) => pet.id == _selectedPetId);
-                if (!validPet) {
-                  final nextPetId = pets.first.id;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    setState(() {
-                      _selectedFamilyId = familyId;
-                      _selectedPetId = nextPetId;
-                    });
-                    _persistActivePetSelection(
-                      familyId: familyId,
-                      petId: nextPetId,
-                    );
-                  });
-                }
-              }
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: queryMemberUids.isEmpty
+                ? const Stream.empty()
+                : _firestore
+                    .collection('users')
+                    .where(FieldPath.documentId, whereIn: queryMemberUids)
+                    .snapshots(),
+            builder: (context, memberSnapshot) {
+              final memberDocs = memberSnapshot.data?.docs ?? const [];
+              final avatarsByUid = <String, String>{
+                for (final doc in memberDocs)
+                  doc.id: ((doc.data()['profile_avatar_id'] as String?)?.trim() ?? ''),
+              };
+              final familyMemberAvatarIds = orderedMemberUids
+                  .take(3)
+                  .map((uid) => avatarsByUid[uid] ?? '')
+                  .toList(growable: false);
 
               return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                stream: _eventService.streamTodayEvents(
-                  familyId: familyId,
-                  petId: _selectedPetId,
-                ),
-                builder: (context, eventSnapshot) {
-                  final todayEvents = eventSnapshot.data ?? const [];
+                stream: _petService.streamPets(familyId),
+                builder: (context, petSnapshot) {
+                  final pets = petSnapshot.data ?? const [];
 
-                  return _buildHomeBody(
-                    familyId: familyId,
-                    pets: pets,
-                    familyMemberCount: familyMemberCount,
-                    todayEvents: todayEvents,
+                  if (petSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (_profileLoaded && pets.isNotEmpty) {
+                    final validPet = _selectedPetId != null &&
+                        pets.any((pet) => pet.id == _selectedPetId);
+                    if (!validPet) {
+                      final nextPetId = pets.first.id;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        setState(() {
+                          _selectedFamilyId = familyId;
+                          _selectedPetId = nextPetId;
+                        });
+                        _persistActivePetSelection(
+                          familyId: familyId,
+                          petId: nextPetId,
+                        );
+                      });
+                    }
+                  }
+
+                  return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                    stream: _eventService.streamTodayEvents(
+                      familyId: familyId,
+                      petId: _selectedPetId,
+                    ),
+                    builder: (context, eventSnapshot) {
+                      final todayEvents = eventSnapshot.data ?? const [];
+
+                      return _buildHomeBody(
+                        familyId: familyId,
+                        pets: pets,
+                        familyMemberCount: familyMemberCount,
+                        familyMemberAvatarIds: familyMemberAvatarIds,
+                        todayEvents: todayEvents,
+                      );
+                    },
                   );
                 },
               );
@@ -1338,7 +1368,7 @@ class _HomeTopBar extends StatelessWidget {
               ),
             ),
           ),
-          const Icon(Icons.notifications, color: Color(0xFFA3AAC4), size: 26),
+          const Icon(Icons.pets_rounded, color: Color(0xFFA3AAC4), size: 26),
         ],
       ),
     );
@@ -1351,6 +1381,7 @@ class _DogHeroCard extends StatelessWidget {
   final String photoUrl;
   final String avatarId;
   final int familyMemberCount;
+  final List<String> familyMemberAvatarIds;
   final VoidCallback onViewDetails;
 
   const _DogHeroCard({
@@ -1359,6 +1390,7 @@ class _DogHeroCard extends StatelessWidget {
     required this.photoUrl,
     required this.avatarId,
     required this.familyMemberCount,
+    required this.familyMemberAvatarIds,
     required this.onViewDetails,
   });
 
@@ -1456,24 +1488,50 @@ class _DogHeroCard extends StatelessWidget {
           Row(
             children: [
               ...List.generate(
-                familyMemberCount > 3 ? 3 : familyMemberCount,
+                familyMemberAvatarIds.length,
                 (index) => Padding(
                   padding: EdgeInsets.only(right: index == 2 ? 0 : 6),
                   child: Container(
                     width: 40,
                     height: 40,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF213458),
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF213458),
+                        width: 1.5,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      color: Color(0xFF74B1FF),
-                      size: 20,
+                    child: ClipOval(
+                      child: buildUserAvatarVisual(
+                        avatarId: familyMemberAvatarIds[index],
+                        size: 40,
+                        borderRadius: BorderRadius.circular(20),
+                        emojiSize: 16,
+                      ),
                     ),
                   ),
                 ),
               ),
+              if (familyMemberAvatarIds.isEmpty)
+                ...List.generate(
+                  familyMemberCount > 3 ? 3 : familyMemberCount,
+                  (index) => Padding(
+                    padding: EdgeInsets.only(right: index == 2 ? 0 : 6),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF213458),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        color: Color(0xFF74B1FF),
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
               if (familyMemberCount > 3) ...[
                 const SizedBox(width: 6),
                 Container(
