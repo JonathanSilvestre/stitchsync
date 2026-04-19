@@ -2,9 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/family_service.dart';
-import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
+import '../viewmodels/screens/manage_pets_view_model.dart';
 import 'add_new_pet_screen.dart';
 
 class ManagePetsScreen extends StatefulWidget {
@@ -15,8 +14,7 @@ class ManagePetsScreen extends StatefulWidget {
 }
 
 class _ManagePetsScreenState extends State<ManagePetsScreen> {
-  final FamilyService _familyService = FamilyService();
-  final PetService _petService = PetService();
+  final ManagePetsViewModel _viewModel = ManagePetsViewModel();
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -24,6 +22,33 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
   static const Color _textMain = Color(0xFFDEE5FF);
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
 
   Future<void> _deletePet({
     required String familyId,
@@ -58,7 +83,11 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
     );
 
     if (confirm == true && mounted) {
-      await _petService.deletePet(familyId: familyId, petId: petId);
+      await _viewModel.deletePetWithFeedback(
+        familyId: familyId,
+        petId: petId,
+        errorMessage: 'Could not delete pet.',
+      );
     }
   }
 
@@ -81,7 +110,7 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: _familyService.streamFamiliesForCurrentUser(),
+      stream: _viewModel.streamFamiliesForCurrentUser(),
       builder: (context, familiesSnapshot) {
         if (familiesSnapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
@@ -107,7 +136,7 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
         final familyId = family.id;
 
         return FutureBuilder<bool>(
-          future: _familyService.isCurrentUserFamilyAdmin(familyId: familyId),
+          future: _viewModel.isCurrentUserFamilyAdmin(familyId: familyId),
           builder: (context, permissionSnapshot) {
             final canManagePets = permissionSnapshot.data ?? false;
 
@@ -196,7 +225,7 @@ class _ManagePetsScreenState extends State<ManagePetsScreen> {
                                 ),
                                 const SizedBox(height: 22),
                                 StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                                  stream: _petService.streamPets(familyId),
+                                  stream: _viewModel.streamPets(familyId),
                                   builder: (context, petsSnapshot) {
                                     if (petsSnapshot.connectionState == ConnectionState.waiting) {
                                       return const Center(child: CircularProgressIndicator());

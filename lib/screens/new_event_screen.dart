@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/event_service.dart';
-import '../services/family_service.dart';
-import '../services/pet_service.dart';
+import '../viewmodels/screens/new_event_view_model.dart';
 import 'home_screen.dart';
 
 class NewEventScreen extends StatefulWidget {
@@ -26,9 +24,7 @@ class NewEventScreen extends StatefulWidget {
 }
 
 class _NewEventScreenState extends State<NewEventScreen> {
-  final EventService _eventService = EventService();
-  final FamilyService _familyService = FamilyService();
-  final PetService _petService = PetService();
+  final NewEventViewModel _viewModel = NewEventViewModel();
 
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
@@ -173,7 +169,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       return widget.familyId!.trim();
     }
 
-    final families = await _familyService.streamFamiliesForCurrentUser().first;
+    final families = await _viewModel.loadFamiliesForCurrentUser();
     if (families.isEmpty) {
       return null;
     }
@@ -191,7 +187,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       return widget.petId!.trim();
     }
 
-    final pets = await _petService.streamPets(familyId).first;
+    final pets = await _viewModel.loadPets(familyId);
     if (pets.isEmpty) {
       return null;
     }
@@ -276,7 +272,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
       }
 
       if (_isEditing) {
-        await _eventService.updateEvent(
+        await _viewModel.updateEvent(
           familyId: familyId,
           eventId: widget.eventId!.trim(),
           petId: petId,
@@ -288,7 +284,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
           recurrenceIntervalDays: recurrenceIntervalDays,
         );
       } else {
-        await _eventService.addEvent(
+        await _viewModel.addEvent(
           familyId: familyId,
           petId: petId,
           title: title,

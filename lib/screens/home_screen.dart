@@ -4,12 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
-import '../services/event_service.dart';
-import '../services/family_service.dart';
-import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
 import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/home_view_model.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'new_event_screen.dart';
@@ -26,11 +23,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final AuthService _auth = AuthService();
-  final FamilyService _familyService = FamilyService();
-  final PetService _petService = PetService();
-  final EventService _eventService = EventService();
+  final HomeViewModel _viewModel = HomeViewModel();
+  FirebaseFirestore get _firestore => _viewModel.firestore;
 
   String _username = 'Sarah';
   int _currentIndex = 0;
@@ -46,25 +40,40 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _currentIndex = widget.initialTab.clamp(0, 3);
     _loadUsername();
     _startProfileSelectionSync();
   }
 
   void _startProfileSelectionSync() {
-    final uid = _auth.currentUser?.uid;
+    final uid = _viewModel.authService.currentUser?.uid;
     if (uid == null) {
       return;
     }
 
     _profileSelectionSubscription?.cancel();
-    _profileSelectionSubscription = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .snapshots()
+    _profileSelectionSubscription = _viewModel
+        .profileSelectionStream(uid)
         .listen((userSnapshot) {
       final userData = userSnapshot.data();
       final activeFamilyId = (userData?['active_family_id'] as String?)?.trim();
@@ -92,42 +101,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadUsername() async {
-    Map<String, dynamic>? profile;
-    try {
-      profile = await _auth.getCurrentUserProfile();
-    } catch (_) {
-      profile = null;
-    }
-
-    final profileUsername = (profile?['username'] as String?)?.trim();
-    final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
-    final activePetId = (profile?['active_pet_id'] as String?)?.trim();
-
-    String? fallbackEmailName;
-    final email = _auth.currentUser?.email?.trim();
-    if (email != null && email.contains('@')) {
-      fallbackEmailName = email.split('@').first;
-    }
-
-    final resolvedName = (profileUsername != null && profileUsername.isNotEmpty)
-        ? profileUsername
-        : (fallbackEmailName != null && fallbackEmailName.isNotEmpty)
-            ? fallbackEmailName
-            : 'Sarah';
+    final selection = await _viewModel.loadHomeSelection();
 
     if (!mounted) return;
 
     setState(() {
-      _username = resolvedName;
-      _selectedFamilyId =
-          activeFamilyId != null && activeFamilyId.isNotEmpty ? activeFamilyId : null;
-      _selectedPetId = activePetId != null && activePetId.isNotEmpty ? activePetId : null;
+      _username = selection.username;
+      _selectedFamilyId = selection.familyId;
+      _selectedPetId = selection.petId;
       _profileLoaded = true;
     });
   }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _profileSelectionSubscription?.cancel();
     super.dispose();
   }
@@ -137,13 +126,12 @@ class _HomeScreenState extends State<HomeScreen> {
     required String petId,
   }) async {
     try {
-      await _auth.saveActivePetSelection(
+      await _viewModel.persistActivePetSelection(
         familyId: familyId,
         petId: petId,
+        errorMessage: 'Could not save active pet.',
       );
-    } catch (_) {
-      // The selection still changes locally even if persistence fails.
-    }
+    } catch (_) {}
   }
 
   Future<void> _openQuickActions({
@@ -529,28 +517,14 @@ class _HomeScreenState extends State<HomeScreen> {
     required String eventId,
     required bool completed,
   }) async {
-    try {
-      await _eventService.setEventCompleted(
-        familyId: familyId,
-        eventId: eventId,
-        completed: completed,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            completed
-                ? context.tr('Event marked as completed.')
-                : context.tr('Event marked as pending.'),
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not update event status.'))),
-      );
-    }
+    await _viewModel.setEventCompleted(
+      familyId: familyId,
+      eventId: eventId,
+      completed: completed,
+      completedMessage: 'Event marked as completed.',
+      pendingMessage: 'Event marked as pending.',
+      errorMessage: 'Could not update event status.',
+    );
   }
 
   Future<void> _deleteEvent({
@@ -564,18 +538,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (!shouldDelete) return;
 
-    try {
-      await _eventService.deleteEvent(familyId: familyId, eventId: eventId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Event deleted.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not delete event.'))),
-      );
-    }
+    await _viewModel.deleteEvent(
+      familyId: familyId,
+      eventId: eventId,
+      successMessage: 'Event deleted.',
+      errorMessage: 'Could not delete event.',
+    );
   }
 
   Future<void> _deleteSeries({
@@ -589,18 +557,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (!shouldDelete) return;
 
-    try {
-      await _eventService.deleteSeries(familyId: familyId, seriesId: seriesId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Series deleted.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not delete series.'))),
-      );
-    }
+    await _viewModel.deleteSeries(
+      familyId: familyId,
+      seriesId: seriesId,
+      successMessage: 'Series deleted.',
+      errorMessage: 'Could not delete series.',
+    );
   }
 
   Future<void> _openHomeEventActions({
@@ -1017,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return Scaffold(
         backgroundColor: _bg,
         body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-          stream: _familyService.streamFamiliesForCurrentUser(),
+          stream: _viewModel.streamFamiliesForCurrentUser(),
           builder: (context, familySnapshot) {
             final families = familySnapshot.data ?? const [];
 
@@ -1056,7 +1018,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
 
             return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-              stream: _petService.streamPets(familyId),
+              stream: _viewModel.streamPets(familyId),
               builder: (context, petSnapshot) {
                 final pets = petSnapshot.data ?? const [];
 
@@ -1137,7 +1099,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: _bg,
       body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-        stream: _familyService.streamFamiliesForCurrentUser(),
+        stream: _viewModel.streamFamiliesForCurrentUser(),
         builder: (context, familySnapshot) {
           final families = familySnapshot.data ?? const [];
 
@@ -1197,7 +1159,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   .toList(growable: false);
 
               return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                stream: _petService.streamPets(familyId),
+                stream: _viewModel.streamPets(familyId),
                 builder: (context, petSnapshot) {
                   final pets = petSnapshot.data ?? const [];
 
@@ -1225,9 +1187,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
 
                   return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                    stream: _eventService.streamTodayEvents(
+                    stream: _viewModel.streamTodayEvents(
                       familyId: familyId,
-                      petId: _selectedPetId,
+                      petId: _selectedPetId ?? '',
                     ),
                     builder: (context, eventSnapshot) {
                       final todayEvents = eventSnapshot.data ?? const [];

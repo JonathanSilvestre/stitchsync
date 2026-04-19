@@ -1,10 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
 import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/account_settings_view_model.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({super.key});
@@ -14,8 +12,7 @@ class AccountSettingsScreen extends StatefulWidget {
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
-  final AuthService _authService = AuthService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AccountSettingsViewModel _viewModel = AccountSettingsViewModel();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _currentPasswordController = TextEditingController();
@@ -23,7 +20,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _confirmNewPasswordController = TextEditingController();
 
   bool _isLoading = true;
-  bool _isSaving = false;
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
@@ -40,14 +36,33 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {
+      _isLoading = _viewModel.isLoading && _isLoading;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _loadProfile();
   }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _usernameController.dispose();
     _emailController.dispose();
     _currentPasswordController.dispose();
@@ -57,145 +72,82 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _loadProfile() async {
-    try {
-      final profile = await _authService.getCurrentUserProfile();
-      final user = _authService.currentUser;
+    final profile = await _viewModel.loadProfileWithState(
+      errorMessage: 'Error loading profile',
+    );
+    final user = _viewModel.authService.currentUser;
 
-      if (mounted) {
-        setState(() {
-          _usernameController.text =
-              profile?['username'] ?? user?.displayName ?? '';
-          _emailController.text = user?.email ?? '';
-          final language = (profile?['language'] as String?)?.toLowerCase();
-          if (language == 'es' || language == 'en') {
-            _selectedLanguage = language!;
-          }
-          final avatarId = (profile?['profile_avatar_id'] as String?)?.trim();
-          if (avatarId != null && avatarId.isNotEmpty) {
-            _selectedAvatarId = resolveUserAvatar(avatarId).id;
-          }
-          _initialUsername = _usernameController.text.trim();
-          _initialLanguage = _selectedLanguage;
-          _initialAvatarId = _selectedAvatarId;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('Error loading profile'))),
-        );
-      }
+    if (!mounted) {
+      return;
     }
+
+    setState(() {
+      _usernameController.text = profile?['username'] ?? user?.displayName ?? '';
+      _emailController.text = user?.email ?? '';
+      final language = (profile?['language'] as String?)?.toLowerCase();
+      if (language == 'es' || language == 'en') {
+        _selectedLanguage = language!;
+      }
+      final avatarId = (profile?['profile_avatar_id'] as String?)?.trim();
+      if (avatarId != null && avatarId.isNotEmpty) {
+        _selectedAvatarId = resolveUserAvatar(avatarId).id;
+      }
+      _initialUsername = _usernameController.text.trim();
+      _initialLanguage = _selectedLanguage;
+      _initialAvatarId = _selectedAvatarId;
+      _isLoading = false;
+    });
   }
 
   Future<void> _saveChanges() async {
-    setState(() => _isSaving = true);
+    final username = _usernameController.text.trim();
+    final currentPassword = _currentPasswordController.text.trim();
+    final newPassword = _newPasswordController.text.trim();
+    final confirmNewPassword = _confirmNewPasswordController.text.trim();
 
-    try {
-      final username = _usernameController.text.trim();
-      final currentPassword = _currentPasswordController.text.trim();
-      final newPassword = _newPasswordController.text.trim();
-      final confirmNewPassword = _confirmNewPasswordController.text.trim();
-        final usernameChanged = username != _initialUsername;
-        final languageChanged = _selectedLanguage != _initialLanguage;
-        final avatarChanged = _selectedAvatarId != _initialAvatarId;
-      final wantsPasswordChange = newPassword.isNotEmpty;
-
-      if (username.isEmpty) {
-        throw Exception('Username cannot be empty');
-      }
-
-      if (newPassword.isNotEmpty && newPassword != confirmNewPassword) {
-        throw Exception('New passwords do not match');
-      }
-
-      if (newPassword.isNotEmpty && currentPassword.isEmpty) {
-        throw Exception('Current password is required to change password');
-      }
-
-      if (!usernameChanged && !wantsPasswordChange && !languageChanged && !avatarChanged) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(context.tr('No changes to save.'))),
-          );
-        }
-        return;
-      }
-
-      if (usernameChanged || wantsPasswordChange) {
-        await _authService.updateAccount(
-          newUsername: username,
-          currentPassword: currentPassword.isEmpty ? null : currentPassword,
-          newPassword: newPassword.isNotEmpty ? newPassword : null,
-        );
-      }
-
-      if (languageChanged) {
-        await _saveLanguagePreference(_selectedLanguage);
-      }
-
-      if (avatarChanged) {
-        await _saveAvatarPreference(_selectedAvatarId);
-      }
-
-      _initialUsername = username;
-      _initialLanguage = _selectedLanguage;
-      _initialAvatarId = _selectedAvatarId;
-
-      _currentPasswordController.clear();
-      _newPasswordController.clear();
-      _confirmNewPasswordController.clear();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('Changes saved successfully'))),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_authService.getReadableAuthError(e))),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${context.tr('Error')}: ${e.toString()}')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
-  }
-
-  Future<void> _saveLanguagePreference(String language) async {
-    final user = _authService.currentUser;
-    if (user == null) {
+    if (newPassword.isNotEmpty && newPassword != confirmNewPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('New passwords do not match'))),
+      );
       return;
     }
 
-    await _firestore.collection('users').doc(user.uid).set(
-      {'language': language},
-      SetOptions(merge: true),
-    );
-  }
-
-  Future<void> _saveAvatarPreference(String avatarId) async {
-    final user = _authService.currentUser;
-    if (user == null) {
+    if (newPassword.isNotEmpty && currentPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('Current password is required to change password'),
+          ),
+        ),
+      );
       return;
     }
 
-    await _firestore.collection('users').doc(user.uid).set(
-      {'profile_avatar_id': avatarId},
-      SetOptions(merge: true),
+    final ok = await _viewModel.saveProfileWithState(
+      username: username,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+      language: _selectedLanguage,
+      avatarId: _selectedAvatarId,
+      initialUsername: _initialUsername,
+      initialLanguage: _initialLanguage,
+      initialAvatarId: _initialAvatarId,
+      noChangesMessage: 'No changes to save.',
+      successMessage: 'Changes saved successfully',
+      errorMessage: 'Error',
     );
+
+    if (!mounted || !ok) {
+      return;
+    }
+
+    _initialUsername = username;
+    _initialLanguage = _selectedLanguage;
+    _initialAvatarId = _selectedAvatarId;
+
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmNewPasswordController.clear();
   }
 
   Future<void> _openAvatarPicker() async {
@@ -249,15 +201,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       final isSelected = avatar.id == _selectedAvatarId;
 
                       return GestureDetector(
-                          onTap: () {
-                            final navigator = Navigator.of(sheetContext);
+                        onTap: () {
                           if (!mounted) {
                             return;
                           }
                           setState(() {
                             _selectedAvatarId = avatar.id;
                           });
-                            navigator.pop();
+                          Navigator.of(sheetContext).pop();
                         },
                         child: Container(
                           padding: const EdgeInsets.all(3),
@@ -744,7 +695,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       width: double.infinity,
       height: 56,
       child: ElevatedButton(
-        onPressed: _isSaving ? null : _saveChanges,
+        onPressed: _viewModel.isLoading ? null : _saveChanges,
         style: ElevatedButton.styleFrom(
           backgroundColor: _primary,
           disabledBackgroundColor: _primary.withValues(alpha: 0.5),
@@ -753,7 +704,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           ),
           elevation: 0,
         ),
-        child: _isSaving
+        child: _viewModel.isLoading
             ? const SizedBox(
                 width: 20,
                 height: 20,

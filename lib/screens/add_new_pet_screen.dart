@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/event_service.dart';
-import '../services/pet_service.dart';
 import '../utils/pet_avatar_catalog.dart';
+import '../viewmodels/screens/add_new_pet_view_model.dart';
 import 'home_screen.dart';
 
 class AddNewPetScreen extends StatefulWidget {
@@ -23,8 +22,7 @@ class AddNewPetScreen extends StatefulWidget {
 }
 
 class _AddNewPetScreenState extends State<AddNewPetScreen> {
-  final PetService _petService = PetService();
-  final EventService _eventService = EventService();
+  final AddNewPetViewModel _viewModel = AddNewPetViewModel();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _breedController = TextEditingController();
   final FocusNode _breedFocusNode = FocusNode();
@@ -36,6 +34,22 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   static const Color _textMain = Color(0xFFDEE5FF);
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
 
   static const List<String> _dogBreeds = [
     'Affenpinscher',
@@ -106,7 +120,6 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
   bool _isMale = true;
   bool _isKg = true;
-  bool _isSaving = false;
   DateTime? _birthDate;
   String _selectedAvatarId = kPetAvatarChoices.first.id;
 
@@ -115,6 +128,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _hydrateFromInitialPetData();
     _breedController.addListener(_onBreedChanged);
   }
@@ -216,6 +230,8 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _breedController.removeListener(_onBreedChanged);
     _nameController.dispose();
     _breedController.dispose();
@@ -260,7 +276,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   }
 
   Future<void> _openAvatarPicker() async {
-    if (_isSaving) {
+    if (_viewModel.isLoading) {
       return;
     }
 
@@ -389,83 +405,34 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    final savedPetId = await _viewModel.savePetWithState(
+      familyId: widget.familyId,
+      petId: widget.petId,
+      name: name,
+      breed: breed,
+      age: _resolveAgeFromBirthDate(),
+      notes: _composeNotes(),
+      avatarId: _selectedAvatarId,
+      birthDate: _birthDate,
+      successMessage: _isEditMode
+          ? 'Pet updated successfully.'
+          : 'Pet added successfully.',
+      errorMessage: 'Could not save pet. Please try again.',
+    );
 
-    try {
-      if (_isEditMode) {
-        await _petService.updatePet(
-          familyId: widget.familyId,
-          petId: widget.petId!,
-          name: name,
-          breed: breed,
-          age: _resolveAgeFromBirthDate(),
-          notes: _composeNotes(),
-          avatarId: _selectedAvatarId,
-        );
+    if (!mounted || savedPetId == null) {
+      return;
+    }
 
-        await _eventService.upsertPetBirthdayAutoEvent(
-          familyId: widget.familyId,
-          petId: widget.petId!,
-          petName: name,
-          birthDate: _birthDate,
-        );
-      } else {
-        final createdPetId = await _petService.addPet(
-          familyId: widget.familyId,
-          name: name,
-          breed: breed,
-          age: _resolveAgeFromBirthDate(),
-          notes: _composeNotes(),
-          avatarId: _selectedAvatarId,
-        );
-
-        await _eventService.upsertPetBirthdayAutoEvent(
-          familyId: widget.familyId,
-          petId: createdPetId,
-          petName: name,
-          birthDate: _birthDate,
-        );
-      }
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isEditMode
-                ? context.tr('Pet updated successfully.')
-                : context.tr('Pet added successfully.'),
-          ),
+    if (_isEditMode) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const HomeScreen(initialTab: 2),
         ),
+        (route) => false,
       );
-
-      if (_isEditMode) {
-        Navigator.of(context).pop();
-      } else {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => const HomeScreen(initialTab: 2),
-          ),
-          (route) => false,
-        );
-      }
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not save pet. Please try again.'))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
     }
   }
 
@@ -831,7 +798,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                             ],
                           ),
                           child: ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _savePet,
+                            onPressed: _viewModel.isLoading ? null : _savePet,
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size.fromHeight(66),
                               backgroundColor: Colors.transparent,
@@ -840,7 +807,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                               shadowColor: Colors.transparent,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                             ),
-                            icon: _isSaving
+                            icon: _viewModel.isLoading
                                 ? const SizedBox(
                                     width: 18,
                                     height: 18,
@@ -851,7 +818,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                   )
                                 : const Icon(Icons.pets),
                             label: Text(
-                              _isSaving
+                              _viewModel.isLoading
                                   ? context.tr('Saving...')
                                   : (_isEditMode ? context.tr('Update Pet') : context.tr('Add Pet')),
                               style: const TextStyle(

@@ -1,9 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
-import '../services/family_service.dart';
+import '../viewmodels/screens/create_family_view_model.dart';
 import 'add_new_pet_screen.dart';
 
 class CreateFamilyScreen extends StatefulWidget {
@@ -14,8 +12,7 @@ class CreateFamilyScreen extends StatefulWidget {
 }
 
 class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
-  final FamilyService _familyService = FamilyService();
-  final AuthService _authService = AuthService();
+  final CreateFamilyViewModel _viewModel = CreateFamilyViewModel();
   final TextEditingController _familyNameController = TextEditingController();
 
   static const Color _bg = Color(0xFF060E20);
@@ -25,10 +22,30 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
-  bool _isSaving = false;
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _familyNameController.dispose();
     super.dispose();
   }
@@ -42,88 +59,61 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    final familyId = await _viewModel.createFamilyWithState(
+      familyName: familyName,
+      errorMessage: 'Could not create family.',
+    );
 
-    try {
-      final familyId = await _familyService.createFamily(familyName);
-
-      if (!mounted) {
-        return;
-      }
-
-      // Set the new family as active and clear previous pet selection
-      await _authService.saveActivePetSelection(
-        familyId: familyId,
-        petId: '', // Clear the pet ID to show "No pets yet"
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      final addPetNow = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return AlertDialog(
-            backgroundColor: _surfaceHigh,
-            title: Text(
-              context.tr('Family created'),
-              style: const TextStyle(color: _textMain, fontWeight: FontWeight.w700),
-            ),
-            content: Text(
-              context.tr('Do you want to add a pet now?'),
-              style: const TextStyle(color: _textMuted),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: Text(context.tr('No')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  foregroundColor: const Color(0xFF0A2550),
-                ),
-                child: Text(context.tr('Yes')),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      if (addPetNow == true) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => AddNewPetScreen(familyId: familyId),
-          ),
-        );
-        return;
-      }
-
-      Navigator.of(context).pop(true);
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+    if (!mounted || familyId == null) {
+      return;
     }
+
+    final addPetNow = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: _surfaceHigh,
+          title: Text(
+            context.tr('Family created'),
+            style: const TextStyle(color: _textMain, fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            context.tr('Do you want to add a pet now?'),
+            style: const TextStyle(color: _textMuted),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(context.tr('No')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: const Color(0xFF0A2550),
+              ),
+              child: Text(context.tr('Yes')),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (addPetNow == true) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => AddNewPetScreen(familyId: familyId),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -310,7 +300,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                   ],
                                 ),
                                 child: ElevatedButton(
-                                  onPressed: _isSaving ? null : _createFamily,
+                                  onPressed: _viewModel.isLoading ? null : _createFamily,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
                                     foregroundColor: Colors.white,
@@ -327,7 +317,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                       letterSpacing: 0.2,
                                     ),
                                   ),
-                                  child: _isSaving
+                                  child: _viewModel.isLoading
                                       ? const SizedBox(
                                           width: 24,
                                           height: 24,

@@ -1,12 +1,10 @@
 import 'dart:ui';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/notification_service.dart';
+import '../viewmodels/screens/notifications_view_model.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -24,9 +22,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   static const Color _title = Color(0xFFDEE5FF);
   static const Color _muted = Color(0xFFA3AAC4);
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final NotificationService _notificationService = NotificationService.instance;
+  final NotificationsViewModel _viewModel = NotificationsViewModel();
 
   bool _pushEnabled = true;
   bool _feedWater = true;
@@ -50,15 +46,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   static const String _prefQuietHoursStart = 'notifications.quiet_hours_start';
   static const String _prefQuietHoursEnd = 'notifications.quiet_hours_end';
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _bootstrap();
   }
 
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
+
   Future<void> _bootstrap() async {
-    await _notificationService.initialize();
-    await _notificationService.requestPermissions();
+    await _viewModel.initializeNotifications();
     await _loadPreferencesFromLocal();
     await _loadPreferences();
   }
@@ -129,12 +146,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _loadPreferences() async {
-    final user = _auth.currentUser ??
-        await _auth
-            .authStateChanges()
-            .firstWhere((u) => u != null)
-            .timeout(const Duration(seconds: 2), onTimeout: () => null);
-    if (user == null) {
+    final prefs = await _viewModel.loadPreferencesWithState(
+      errorMessage: 'Could not load notification settings.',
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (prefs == null) {
       if (!mounted) {
         return;
       }
@@ -144,48 +164,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
 
-    try {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
-      final data = doc.data() ?? <String, dynamic>{};
-        final prefsRaw = data['notification_preferences'];
-        final prefs = prefsRaw is Map
-          ? Map<String, dynamic>.from(prefsRaw)
-          : <String, dynamic>{};
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _pushEnabled = _boolFromDynamic(prefs['push_enabled'], _pushEnabled);
-        _feedWater = _boolFromDynamic(prefs['feed_water'], _feedWater);
-        _walksExercise = _boolFromDynamic(
-          prefs['walks_exercise'],
-          _walksExercise,
-        );
-        _medicationVet = _boolFromDynamic(prefs['medication_vet'], _medicationVet);
-        _familyUpdates = _boolFromDynamic(prefs['family_updates'], _familyUpdates);
-        _quietHoursEnabled = _boolFromDynamic(
-          prefs['quiet_hours_enabled'],
-          _quietHoursEnabled,
-        );
-        _quietStart = _timeFromString(prefs['quiet_hours_start']?.toString()) ??
-            _quietStart;
-        _quietEnd =
-            _timeFromString(prefs['quiet_hours_end']?.toString()) ?? _quietEnd;
-        _isLoadingPreferences = false;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isLoadingPreferences = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not load notification settings.'))),
+    setState(() {
+      _pushEnabled = _boolFromDynamic(prefs['push_enabled'], _pushEnabled);
+      _feedWater = _boolFromDynamic(prefs['feed_water'], _feedWater);
+      _walksExercise = _boolFromDynamic(
+        prefs['walks_exercise'],
+        _walksExercise,
       );
-    }
+      _medicationVet = _boolFromDynamic(prefs['medication_vet'], _medicationVet);
+      _familyUpdates = _boolFromDynamic(prefs['family_updates'], _familyUpdates);
+      _quietHoursEnabled = _boolFromDynamic(
+        prefs['quiet_hours_enabled'],
+        _quietHoursEnabled,
+      );
+      _quietStart = _timeFromString(prefs['quiet_hours_start']?.toString()) ??
+          _quietStart;
+      _quietEnd = _timeFromString(prefs['quiet_hours_end']?.toString()) ?? _quietEnd;
+      _isLoadingPreferences = false;
+    });
   }
 
   bool _boolFromDynamic(dynamic value, bool fallback) {
@@ -242,26 +238,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _savePreferences(Map<String, dynamic> updates) async {
     await _savePreferencesToLocal(updates);
-
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('No active user');
+    final ok = await _viewModel.savePreferencesWithState(
+      updates: updates,
+      errorMessage: 'Could not save notification setting.',
+    );
+    if (!ok) {
+      throw Exception('Cloud save failed');
     }
-
-    final payload = <String, dynamic>{
-      'updated_at': FieldValue.serverTimestamp(),
-    };
-
-    for (final entry in updates.entries) {
-      payload['notification_preferences.${entry.key}'] = entry.value;
-    }
-
-    await _firestore.collection('users').doc(user.uid).set(
-          payload,
-          SetOptions(merge: true),
-        );
-
-    await _notificationService.syncUpcomingEventReminders();
   }
 
   void _trackSave(Future<void> op) {

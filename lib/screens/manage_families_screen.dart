@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/family_service.dart';
+import '../viewmodels/screens/manage_families_view_model.dart';
 
 class ManageFamiliesScreen extends StatefulWidget {
   const ManageFamiliesScreen({super.key});
@@ -13,8 +13,38 @@ class ManageFamiliesScreen extends StatefulWidget {
 }
 
 class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
-  final FamilyService _familyService = FamilyService();
+  final ManageFamiliesViewModel _viewModel = ManageFamiliesViewModel();
+  FirebaseAuth get _auth => _viewModel.auth;
   bool _isProcessing = false;
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {
+      _isProcessing = _viewModel.isLoading;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
 
   Future<void> _showFamilyDialog({
     String? familyId,
@@ -45,30 +75,20 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                   return;
                 }
 
-                try {
-                  if (familyId == null) {
-                    await _familyService.createFamily(value);
-                  } else {
-                    await _familyService.updateFamilyName(
-                      familyId: familyId,
-                      familyName: value,
-                    );
-                  }
+                final ok = await _viewModel.saveFamilyWithFeedback(
+                  value: value,
+                  familyId: familyId,
+                );
 
-                  if (!mounted) {
-                    return;
-                  }
-
-                  Navigator.of(context).pop();
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
+                if (!ok) {
+                  return;
                 }
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
               },
               child: Text(context.tr('Save')),
             ),
@@ -110,30 +130,22 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                   return;
                 }
 
-                try {
-                  await _familyService.inviteByEmail(
-                    familyId: familyId,
-                    familyName: familyName,
-                    email: email,
-                  );
+                final ok = await _viewModel.inviteByEmailWithFeedback(
+                  familyId: familyId,
+                  familyName: familyName,
+                  email: email,
+                  successMessage: 'Invitation created successfully',
+                );
 
-                  if (!mounted) {
-                    return;
-                  }
-
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(context.tr('Invitation created successfully'))),
-                  );
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
+                if (!ok) {
+                  return;
                 }
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
               },
               child: Text(context.tr('Invite')),
             ),
@@ -171,53 +183,25 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
       return;
     }
 
-    try {
-      await _familyService.deleteFamily(familyId);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not delete family.'))),
-      );
-    }
+    await _viewModel.deleteFamilyWithFeedback(
+      familyId: familyId,
+      errorMessage: 'Could not delete family.',
+    );
   }
 
   Future<void> _respondToInvitation({
     required String invitationId,
     required bool accept,
   }) async {
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      if (accept) {
-        await _familyService.acceptInvitation(invitationId: invitationId);
-      } else {
-        await _familyService.rejectInvitation(invitationId: invitationId);
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-        });
-      }
-    }
+    await _viewModel.respondToInvitationWithFeedback(
+      invitationId: invitationId,
+      accept: accept,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid = _auth.currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(
@@ -239,7 +223,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
           _SectionTitle(context.tr('My families')),
           const SizedBox(height: 8),
           StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-            stream: _familyService.streamFamiliesForCurrentUser(),
+            stream: _viewModel.streamFamiliesForCurrentUser(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -321,7 +305,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
           _SectionTitle(context.tr('Pending invitations')),
           const SizedBox(height: 8),
           StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-            stream: _familyService.streamPendingInvitationsForCurrentUser(),
+            stream: _viewModel.streamPendingInvitationsForCurrentUser(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());

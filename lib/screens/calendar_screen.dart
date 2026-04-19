@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/event_service.dart';
+import '../viewmodels/screens/calendar_view_model.dart';
 import 'new_event_screen.dart';
 
 class CalendarTabContent extends StatefulWidget {
@@ -26,8 +26,22 @@ class CalendarTabContent extends StatefulWidget {
 }
 
 class _CalendarTabContentState extends State<CalendarTabContent> {
-  final EventService _eventService = EventService();
+  final CalendarViewModel _viewModel = CalendarViewModel();
   late final String _randomProTip;
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
 
   static const List<String> _monthNames = [
     'January',
@@ -64,7 +78,15 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _randomProTip = _proTips[Random().nextInt(_proTips.length)];
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
   }
 
   DateTime get _minMonth {
@@ -318,18 +340,12 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
 
     if (!shouldDelete) return;
 
-    try {
-      await _eventService.deleteEvent(familyId: familyId, eventId: eventId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Event deleted.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not delete event.'))),
-      );
-    }
+    await _viewModel.deleteEventWithFeedback(
+      familyId: familyId,
+      eventId: eventId,
+      successMessage: 'Event deleted.',
+      errorMessage: 'Could not delete event.',
+    );
   }
 
   Future<void> _deleteSeries({
@@ -344,18 +360,12 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
 
     if (!shouldDelete) return;
 
-    try {
-      await _eventService.deleteSeries(familyId: familyId, seriesId: seriesId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Series deleted.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not delete series.'))),
-      );
-    }
+    await _viewModel.deleteSeriesWithFeedback(
+      familyId: familyId,
+      seriesId: seriesId,
+      successMessage: 'Series deleted.',
+      errorMessage: 'Could not delete series.',
+    );
   }
 
   Future<void> _setEventCompleted({
@@ -363,28 +373,14 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     required String eventId,
     required bool completed,
   }) async {
-    try {
-      await _eventService.setEventCompleted(
-        familyId: familyId,
-        eventId: eventId,
-        completed: completed,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            completed
-                ? context.tr('Event marked as completed.')
-                : context.tr('Event marked as pending.'),
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not update event status.'))),
-      );
-    }
+    await _viewModel.setEventCompletedWithFeedback(
+      familyId: familyId,
+      eventId: eventId,
+      completed: completed,
+      completedMessage: 'Event marked as completed.',
+      pendingMessage: 'Event marked as pending.',
+      errorMessage: 'Could not update event status.',
+    );
   }
 
   Future<void> _openEventActions({
@@ -585,7 +581,7 @@ class _CalendarTabContentState extends State<CalendarTabContent> {
     final rangeEnd = DateTime(_visibleMonth.year, _visibleMonth.month + 2, 1);
 
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: _eventService.streamEventsInRange(
+      stream: _viewModel.streamEventsInRange(
         familyId: familyId,
         start: rangeStart,
         end: rangeEnd,

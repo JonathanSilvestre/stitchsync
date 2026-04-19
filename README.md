@@ -85,15 +85,17 @@ StitchSync solves this by centralizing:
 
 StitchSync follows a lightweight layered structure:
 
-- screens: presentation layer and navigation flows.
+- screens: View layer (UI and navigation flows).
+- viewmodels: ViewModel layer (state and actions for each screen).
 - services: domain logic and Firebase access.
 - utils: shared UI catalogs and helpers.
 - l10n: in-app localization resources.
 
 Key design decisions:
 
-- Stateful widgets for local screen state.
-- Service-driven domain operations.
+- MVVM separation for new and migrated modules.
+- ChangeNotifier-based ViewModels for reactive UI state.
+- Service-driven domain operations behind ViewModels.
 - Firestore as shared source of truth.
 - Local persistence for resilient notification preferences.
 
@@ -105,6 +107,11 @@ lib/
   firebase_options.dart
   l10n/
     app_i18n.dart
+  viewmodels/
+    base_view_model.dart
+    auth/
+      login_view_model.dart
+      register_view_model.dart
   screens/
     home_screen.dart
     calendar_screen.dart

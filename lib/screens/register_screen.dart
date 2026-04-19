@@ -1,8 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
+import '../viewmodels/auth/register_view_model.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -13,7 +12,7 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final AuthService _auth = AuthService();
+  final RegisterViewModel _viewModel = RegisterViewModel();
   final _formKey = GlobalKey<FormState>();
 
   final _usernameController = TextEditingController();
@@ -22,12 +21,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
   final _addressController = TextEditingController();
   final _ageController = TextEditingController();
-
-  bool _isLoading = false;
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-  bool _acceptedTerms = false;
-  String? _selectedCountry;
 
   static const List<String> _countries = [
     'Mexico',
@@ -47,7 +40,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   static const Color _primary = Color(0xFF74B1FF);
 
   @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -62,7 +70,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (!_acceptedTerms) {
+    if (!_viewModel.acceptedTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.tr('Debes aceptar los terminos para continuar.')),
@@ -71,61 +79,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    final parsedAge = int.tryParse(_ageController.text.trim());
+    if (parsedAge == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('Could not complete sign up.'))),
+      );
+      return;
+    }
 
-    try {
-      final user = await _auth.register(
+    final result = await _viewModel.register(
         username: _usernameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        age: int.parse(_ageController.text.trim()),
-        country: _selectedCountry ?? '',
+        age: parsedAge,
       );
 
-      if (!mounted) {
-        return;
-      }
-
-      if (user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context.tr('Cuenta creada. Verifica tu correo y luego inicia sesión.'),
-            ),
-          ),
-        );
-
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const LoginScreen(),
-          ),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_auth.getReadableAuthError(e))),
-      );
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('Could not complete sign up.'))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    if (!mounted) {
+      return;
     }
+
+    if (!result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(result.message ?? 'Could not complete sign up.'))),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.tr('Cuenta creada. Verifica tu correo y luego inicia sesión.'),
+        ),
+      ),
+    );
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
   }
 
   @override
@@ -305,15 +297,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             controller: _passwordController,
                             hint: '........',
                             icon: Icons.lock,
-                            obscureText: _obscurePassword,
+                            obscureText: _viewModel.obscurePassword,
                             suffix: IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
+                              onPressed: _viewModel.togglePasswordVisibility,
                               icon: Icon(
-                                _obscurePassword
+                                _viewModel.obscurePassword
                                     ? Icons.visibility_outlined
                                     : Icons.visibility_off_outlined,
                                 color: const Color(0xFF94A0B7),
@@ -338,16 +326,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             controller: _confirmPasswordController,
                             hint: '........',
                             icon: Icons.shield_outlined,
-                            obscureText: _obscureConfirmPassword,
+                            obscureText: _viewModel.obscureConfirmPassword,
                             suffix: IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _obscureConfirmPassword =
-                                      !_obscureConfirmPassword;
-                                });
-                              },
+                              onPressed:
+                                  _viewModel.toggleConfirmPasswordVisibility,
                               icon: Icon(
-                                _obscureConfirmPassword
+                                _viewModel.obscureConfirmPassword
                                     ? Icons.visibility_outlined
                                     : Icons.visibility_off_outlined,
                                 color: const Color(0xFF94A0B7),
@@ -420,7 +404,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     _buildFieldLabel('COUNTRY'),
                                     const SizedBox(height: 8),
                                     DropdownButtonFormField<String>(
-                                      initialValue: _selectedCountry,
+                                      initialValue: _viewModel.selectedCountry,
                                       isExpanded: true,
                                       items: _countries
                                           .map(
@@ -434,11 +418,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             ),
                                           )
                                           .toList(),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _selectedCountry = value;
-                                        });
-                                      },
+                                      onChanged: _viewModel.setSelectedCountry,
                                       validator: (value) {
                                         if (value == null || value.isEmpty) {
                                           return 'Pais';
@@ -467,12 +447,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Checkbox(
-                                value: _acceptedTerms,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _acceptedTerms = value ?? false;
-                                  });
-                                },
+                                value: _viewModel.acceptedTerms,
+                                onChanged: (value) =>
+                                    _viewModel.setAcceptedTerms(value ?? false),
                                 activeColor: const Color(0xFF74B1FF),
                                 checkColor: const Color(0xFF041326),
                                 side: const BorderSide(
@@ -536,7 +513,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ],
                             ),
                             child: ElevatedButton(
-                              onPressed: _isLoading ? null : _register,
+                              onPressed: _viewModel.isLoading ? null : _register,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.transparent,
                                 shadowColor: Colors.transparent,
@@ -550,7 +527,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   fontSize: 17,
                                 ),
                               ),
-                              child: _isLoading
+                              child: _viewModel.isLoading
                                   ? const SizedBox(
                                       width: 22,
                                       height: 22,

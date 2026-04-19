@@ -1,8 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
+import '../viewmodels/auth/login_view_model.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,13 +12,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final AuthService _auth = AuthService();
+  final LoginViewModel _viewModel = LoginViewModel();
   final _formKey = GlobalKey<FormState>();
   final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
-
-  bool _isLoading = false;
-  bool _obscurePassword = true;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF131E33);
@@ -29,7 +25,22 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color _primary = Color(0xFF74B1FF);
 
   @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -40,39 +51,19 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    final result = await _viewModel.login(
+      identifier: _identifierController.text,
+      password: _passwordController.text,
+    );
 
-    try {
-      final user = await _auth.login(
-        _identifierController.text.trim(),
-        _passwordController.text,
-      );
+    if (!mounted) {
+      return;
+    }
 
-      if (!mounted) {
-        return;
-      }
-
-      if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('Could not sign in.'))),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+    if (!result.success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_auth.getReadableAuthError(e))),
+        SnackBar(content: Text(context.tr(result.message ?? 'Could not sign in.'))),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
@@ -217,40 +208,44 @@ class _LoginScreenState extends State<LoginScreen> {
                                       final resetSentText = context.tr(
                                         'We sent you an email to recover your password',
                                       );
+                                      final fallbackErrorText =
+                                          context.tr('Could not sign in.');
 
-                                      try {
-                                        await _auth.sendPasswordReset(value);
+                                      final result = await _viewModel.sendPasswordReset(value);
 
-                                        if (!mounted) {
-                                          return;
-                                        }
+                                      if (!mounted) {
+                                        return;
+                                      }
 
-                                        if (dialogContext.mounted) {
-                                          FocusManager.instance.primaryFocus?.unfocus();
-                                          Navigator.of(dialogContext).pop();
-                                        }
-
+                                      if (!result.success) {
                                         messenger.showSnackBar(
                                           SnackBar(
-                                            content: Text(resetSentText),
+                                            content: Text(result.message ?? fallbackErrorText),
                                           ),
                                         );
-                                      } on FirebaseAuthException catch (e) {
-                                        if (!mounted) {
-                                          return;
-                                        }
-
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            content: Text(_auth.getReadableAuthError(e)),
-                                          ),
-                                        );
-                                      } finally {
                                         if (dialogContext.mounted) {
                                           setDialogState(() {
                                             isSending = false;
                                           });
                                         }
+                                        return;
+                                      }
+
+                                      if (dialogContext.mounted) {
+                                        FocusManager.instance.primaryFocus?.unfocus();
+                                        Navigator.of(dialogContext).pop();
+                                      }
+
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(resetSentText),
+                                        ),
+                                      );
+
+                                      if (dialogContext.mounted) {
+                                        setDialogState(() {
+                                          isSending = false;
+                                        });
                                       }
                                     },
                               style: ElevatedButton.styleFrom(
@@ -511,7 +506,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _passwordController,
-                              obscureText: _obscurePassword,
+                              obscureText: _viewModel.obscurePassword,
                               style: const TextStyle(
                                 color: Color(0xFFD8DFF2),
                                 fontSize: 16,
@@ -528,13 +523,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: Color(0xFF8791A3),
                                 ),
                                 suffixIcon: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
+                                  onPressed: _viewModel.togglePasswordVisibility,
                                   icon: Icon(
-                                    _obscurePassword
+                                    _viewModel.obscurePassword
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined,
                                     color: const Color(0xFF94A0B7),
@@ -591,7 +582,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                               child: ElevatedButton(
-                                onPressed: _isLoading ? null : _login,
+                                onPressed: _viewModel.isLoading ? null : _login,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -605,7 +596,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     fontSize: 16,
                                   ),
                                 ),
-                                child: _isLoading
+                                child: _viewModel.isLoading
                                     ? const SizedBox(
                                         width: 22,
                                         height: 22,

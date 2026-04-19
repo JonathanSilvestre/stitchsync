@@ -5,9 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_i18n.dart';
 import 'create_family_screen.dart';
-import '../services/family_service.dart';
-import '../services/event_service.dart';
 import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/family_view_model.dart';
 
 class FamilyTabContent extends StatefulWidget {
   const FamilyTabContent({super.key});
@@ -17,9 +16,9 @@ class FamilyTabContent extends StatefulWidget {
 }
 
 class _FamilyTabContentState extends State<FamilyTabContent> {
-  final FamilyService _familyService = FamilyService();
-  final EventService _eventService = EventService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FamilyViewModel _viewModel = FamilyViewModel();
+  FirebaseFirestore get _firestore => _viewModel.firestore;
+  FirebaseAuth get _auth => _viewModel.auth;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -28,15 +27,39 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _syncMembershipIndex();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
   }
 
   Future<void> _syncMembershipIndex() async {
     try {
-      await _familyService.syncCurrentUserFamilyIds();
+      await _viewModel.syncMembershipIndex();
     } catch (_) {
       // Best-effort sync; UI can continue with existing data.
     }
@@ -90,40 +113,27 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   return;
                 }
 
-                try {
-                  await _familyService.joinFamilyByInviteCode(inviteCode: code);
-                  await _syncMembershipIndex();
-
-                  if (!dialogContext.mounted) {
-                    return;
-                  }
-
-                  Navigator.of(dialogContext).pop();
-
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(context.tr('Te uniste a la familia correctamente.'))),
-                  );
-
-                  setState(() {});
-                } on FirebaseException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        e is FirebaseAuthException
-                            ? _familyService.getReadableError(e)
-                            : (e.message ?? context.tr('Could not join family.')),
-                      ),
-                    ),
-                  );
+                final joined = await _viewModel.joinFamilyByInviteCodeWithFeedback(
+                  code: code,
+                  successMessage: 'Te uniste a la familia correctamente.',
+                  fallbackErrorMessage: 'Could not join family.',
+                );
+                if (!joined) {
+                  return;
                 }
+                await _syncMembershipIndex();
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
+
+                if (!mounted) {
+                  return;
+                }
+
+                setState(() {});
               },
               child: Text(context.tr('Unirme')),
             ),
@@ -138,7 +148,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     required _MemberData member,
     required bool canManage,
   }) async {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid = _auth.currentUser?.uid;
     if (currentUid == null || member.uid == currentUid || !canManage || member.isOwner) {
       return;
     }
@@ -204,21 +214,13 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     );
 
     if (action == 'make_admin') {
-      try {
-        await _familyService.promoteMemberToAdmin(
-          familyId: familyId,
-          memberUid: member.uid,
-        );
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('Miembro promovido a administrador.'))),
-        );
+      final ok = await _viewModel.promoteMemberToAdminWithFeedback(
+        familyId: familyId,
+        memberUid: member.uid,
+        successMessage: 'Miembro promovido a administrador.',
+      );
+      if (ok && mounted) {
         setState(() {});
-      } on FirebaseAuthException catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_familyService.getReadableError(e))),
-        );
       }
       return;
     }
@@ -227,21 +229,13 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       return;
     }
 
-    try {
-      await _familyService.removeMemberFromFamily(
-        familyId: familyId,
-        memberUid: member.uid,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Miembro eliminado de la familia.'))),
-      );
+    final ok = await _viewModel.removeMemberFromFamilyWithFeedback(
+      familyId: familyId,
+      memberUid: member.uid,
+      successMessage: 'Miembro eliminado de la familia.',
+    );
+    if (ok && mounted) {
       setState(() {});
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
     }
   }
 
@@ -284,19 +278,16 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       return;
     }
 
-    try {
-      await _familyService.leaveFamily(familyId: familyId);
-      await _syncMembershipIndex();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Saliste de la familia.'))),
-      );
+    final ok = await _viewModel.leaveFamilyWithFeedback(
+      familyId: familyId,
+      successMessage: 'Saliste de la familia.',
+    );
+    if (!ok) {
+      return;
+    }
+    await _syncMembershipIndex();
+    if (mounted) {
       setState(() {});
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
     }
   }
 
@@ -307,20 +298,17 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   ) async {
     final adminSet = adminUids.map((e) => e.toString()).toSet();
 
-    final docs = await Future.wait(
-      memberUids.map(
-        (uid) => _firestore.collection('users').doc(uid as String).get(),
-      ),
-    );
+    final docs = await _viewModel.loadMemberProfiles(memberUids);
 
     return docs.map((doc) {
-      final data = doc.data() ?? <String, dynamic>{};
+      final data = doc['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
       final avatarId = (data['profile_avatar_id'] as String?)?.trim();
-      final isOwner = doc.id == ownerUid;
-      final isAdmin = isOwner || adminSet.contains(doc.id);
+      final uid = (doc['uid'] as String?) ?? '';
+      final isOwner = uid == ownerUid;
+      final isAdmin = isOwner || adminSet.contains(uid);
       return _MemberData(
-        uid: doc.id,
+        uid: uid,
         name: (username != null && username.isNotEmpty) ? username : context.tr('Member'),
         subtitle: isOwner
           ? context.tr('Owner')
@@ -366,7 +354,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   Widget _buildPetHealthPulse({
     required String familyId,
   }) {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid = _auth.currentUser?.uid;
 
     if (currentUid == null) {
       return const SizedBox.shrink();
@@ -454,7 +442,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
             }
 
             return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-              stream: _eventService.streamTodayEvents(
+              stream: _viewModel.streamTodayEvents(
                 familyId: familyId,
                 petId: petIdForLookup,
               ),
@@ -545,7 +533,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: _familyService.streamFamiliesForCurrentUser(),
+      stream: _viewModel.streamFamiliesForCurrentUser(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -580,7 +568,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
         final memberUids = (data['member_uids'] as List<dynamic>? ?? const []);
         final adminUids =
             (data['admin_uids'] as List<dynamic>? ?? <dynamic>[ownerUid]).toSet().toList();
-        final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final currentUid = _auth.currentUser?.uid ?? '';
         final isCurrentUserAdmin = adminUids.contains(currentUid) || ownerUid == currentUid;
         final hasAnotherAdmin =
             adminUids.any((uid) => uid.toString() != currentUid) || ownerUid != currentUid;
@@ -835,7 +823,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                             children: [
                                               Text(
                                                 member.name +
-                                                    (member.uid == FirebaseAuth.instance.currentUser?.uid
+                                                    (member.uid == _auth.currentUser?.uid
                                                         ? ' (${context.tr('You')})'
                                                         : ''),
                                                 maxLines: 1,

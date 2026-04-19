@@ -10,6 +10,7 @@ import 'services/notification_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'viewmodels/app/app_root_view_model.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +30,8 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  final AuthService _authService = AuthService();
+  final AppRootViewModel _viewModel = AppRootViewModel();
+  AuthService get _authService => _viewModel.authService;
 
   @override
   void initState() {

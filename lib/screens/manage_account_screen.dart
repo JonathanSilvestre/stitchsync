@@ -1,9 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/auth_service.dart';
+import '../viewmodels/screens/manage_account_view_model.dart';
 
 class ManageAccountScreen extends StatefulWidget {
   const ManageAccountScreen({super.key});
@@ -13,7 +11,7 @@ class ManageAccountScreen extends StatefulWidget {
 }
 
 class _ManageAccountScreenState extends State<ManageAccountScreen> {
-  final AuthService _auth = AuthService();
+  final ManageAccountViewModel _viewModel = ManageAccountViewModel();
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _currentPasswordController = TextEditingController();
@@ -21,21 +19,39 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
   final _confirmNewPasswordController = TextEditingController();
 
   bool _isLoadingProfile = true;
-  bool _isSaving = false;
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
   String _selectedLanguage = 'es';
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {
+      _isLoadingProfile = _isLoadingProfile && _viewModel.isLoading;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _viewModel.addListener(_onViewModelChanged);
     _loadProfile();
     _loadLanguage();
   }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _usernameController.dispose();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
@@ -44,14 +60,15 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final profile = await _auth.getCurrentUserProfile();
+    final profile = await _viewModel.loadProfileWithState();
 
     if (!mounted) {
       return;
     }
 
     _usernameController.text =
-        (profile?['username'] as String?) ?? (_auth.currentUser?.displayName ?? '');
+      (profile?['username'] as String?) ??
+        (_viewModel.authService.currentUser?.displayName ?? '');
 
     setState(() {
       _isLoadingProfile = false;
@@ -59,45 +76,24 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
   }
 
   Future<void> _loadLanguage() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final language = (doc.data()?['language'] as String?) ?? 'es';
-      if (mounted) {
-        setState(() {
-          _selectedLanguage = language;
-        });
-      }
-    } catch (_) {}
+    final language = await _viewModel.loadLanguageWithState(fallback: 'es');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedLanguage = language;
+    });
   }
 
   Future<void> _saveLanguage(String language) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set(
-            {'language': language},
-            SetOptions(merge: true),
-          );
-      if (mounted) {
-        setState(() {
-          _selectedLanguage = language;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not save language preference.'))),
-      );
+    final ok = await _viewModel.saveLanguageWithState(
+      language: language,
+      errorMessage: 'Could not save language preference.',
+    );
+    if (ok && mounted) {
+      setState(() {
+        _selectedLanguage = language;
+      });
     }
   }
 
@@ -106,12 +102,7 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      await _auth.updateAccount(
+    final ok = await _viewModel.saveAccountWithState(
         newUsername: _usernameController.text.trim(),
         currentPassword: _currentPasswordController.text,
         newPassword: _newPasswordController.text.trim().isEmpty
@@ -119,36 +110,19 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
             : _newPasswordController.text.trim(),
       );
 
-      if (!mounted) {
-        return;
-      }
+    if (!mounted) {
+      return;
+    }
 
+    if (ok) {
       _currentPasswordController.clear();
       _newPasswordController.clear();
       _confirmNewPasswordController.clear();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Account updated successfully.'))),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_auth.getReadableAuthError(e))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
     }
   }
 
   Future<void> _logout() async {
-    await _auth.logout();
+    await _viewModel.authService.logout();
     if (!mounted) {
       return;
     }
@@ -286,13 +260,13 @@ class _ManageAccountScreenState extends State<ManageAccountScreen> {
                       ),
                       const SizedBox(height: 18),
                       ElevatedButton(
-                        onPressed: _isSaving ? null : _saveAccount,
+                        onPressed: _viewModel.isLoading ? null : _saveAccount,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1D6A7B),
                           foregroundColor: Colors.white,
                           minimumSize: const Size.fromHeight(50),
                         ),
-                        child: _isSaving
+                        child: _viewModel.isLoading
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,

@@ -1,12 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../services/auth_service.dart';
-import '../services/family_service.dart';
-import '../services/pet_service.dart';
 import '../l10n/app_i18n.dart';
 import '../utils/pet_avatar_catalog.dart';
 import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/profile_view_model.dart';
 import 'account_settings_screen.dart';
 import 'home_screen.dart';
 import 'manage_family_screen.dart';
@@ -32,10 +30,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const Color _errorRed = Color(0xFFD32F2F);
   static const Color _surfaceBright = Color(0xFF384A62);
 
-  late AuthService _authService;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FamilyService _familyService = FamilyService();
-  final PetService _petService = PetService();
+  final ProfileViewModel _viewModel = ProfileViewModel();
+  FirebaseFirestore get _firestore => _viewModel.firestore;
 
   String? _userName;
   String? _activeFamilyId;
@@ -46,19 +42,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _activePetPhotoUrl = '';
   String _activePetAvatarId = '';
   String _profileAvatarId = kUserAvatarChoices.first.id;
-  bool _isLoading = true;
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
-    _authService = AuthService();
+    _viewModel.addListener(_onViewModelChanged);
     _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
     try {
-      final profile = await _authService.getCurrentUserProfile();
-      final currentUser = _authService.currentUser;
+      final profile = await _viewModel.getCurrentUserProfileWithLoading();
+      final currentUser = _viewModel.authService.currentUser;
       final profileUsername = (profile?['username'] as String?)?.trim();
       final fallbackUsername = currentUser?.email?.split('@').first;
       final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
@@ -83,12 +101,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
 
       await _loadActivePetContext();
-
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -99,7 +111,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _activePetPhotoUrl = '';
           _activePetAvatarId = '';
           _profileAvatarId = kUserAvatarChoices.first.id;
-          _isLoading = false;
         });
       }
     }
@@ -122,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadActivePetContext() async {
     var familyId = _activeFamilyId;
     if (familyId == null || familyId.isEmpty) {
-      final families = await _familyService.streamFamiliesForCurrentUser().first;
+      final families = await _viewModel.getCurrentUserFamilies();
       if (families.isNotEmpty) {
         familyId = families.first.id;
       }
@@ -145,7 +156,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final pets = await _petService.streamPets(familyId).first;
+    final pets = await _viewModel.getFamilyPets(familyId);
     if (pets.isEmpty) {
       if (!mounted) {
         return;
@@ -221,20 +232,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           : kPetAvatarChoices.first.id;
     });
 
-    try {
-      await _authService.saveActivePetSelection(
-        familyId: familyId,
-        petId: petDoc.id,
-      );
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Could not save active pet.'))),
-      );
-    }
+    await _viewModel.saveActivePetSelectionWithFeedback(
+      familyId: familyId,
+      petId: petDoc.id,
+      errorMessage: 'Could not save active pet.',
+    );
   }
 
   Future<void> _openPetSwitcher() async {
@@ -250,7 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final pets = await _petService.streamPets(familyId).first;
+    final pets = await _viewModel.getFamilyPets(familyId);
     if (pets.isEmpty) {
       if (!mounted) {
         return;
@@ -423,7 +425,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              await _authService.logout();
+              await _viewModel.authService.logout();
               nav.pushNamedAndRemoveUntil(
                 '/login',
                 (route) => false,
@@ -457,7 +459,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: _isLoading
+        body: _viewModel.isLoading
           ? _buildLoadingState()
           : Stack(
               children: [
@@ -659,36 +661,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final memberName = context.tr('Family Member');
     final memberLabel = context.tr('MEMBER');
 
-    try {
-      final families = await _familyService.streamFamiliesForCurrentUser().first;
-      if (families.isEmpty) {
-        return (roleName: noFamilyName, roleLabel: noFamilyLabel);
-      }
-
-      late QueryDocumentSnapshot<Map<String, dynamic>> selectedFamily;
-      try {
-        selectedFamily = families.firstWhere((family) => family.id == _activeFamilyId);
-      } catch (_) {
-        selectedFamily = families.first;
-      }
-
-      final familyData = selectedFamily.data();
-      final currentUid = _authService.currentUser?.uid ?? '';
-      final ownerUid = (familyData['owner_uid'] as String?) ?? '';
-      final adminUids = (familyData['admin_uids'] as List<dynamic>? ?? const [])
-          .map((e) => e.toString())
-          .toSet();
-
-      if (currentUid == ownerUid) {
-        return (roleName: ownerName, roleLabel: ownerLabel);
-      } else if (adminUids.contains(currentUid)) {
-        return (roleName: adminName, roleLabel: adminLabel);
-      } else {
-        return (roleName: memberName, roleLabel: memberLabel);
-      }
-    } catch (_) {
-      return (roleName: memberName, roleLabel: memberLabel);
-    }
+    return _viewModel.getCurrentUserRole(
+      activeFamilyId: _activeFamilyId,
+      noFamilyName: noFamilyName,
+      noFamilyLabel: noFamilyLabel,
+      ownerName: ownerName,
+      ownerLabel: ownerLabel,
+      adminName: adminName,
+      adminLabel: adminLabel,
+      memberName: memberName,
+      memberLabel: memberLabel,
+    );
   }
 
   Widget _buildSyncingSection() {
@@ -777,7 +760,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildFamilySection() {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: _familyService.streamFamiliesForCurrentUser(),
+      stream: _viewModel.streamFamiliesForCurrentUser(),
       builder: (context, familySnapshot) {
         if (familySnapshot.connectionState == ConnectionState.waiting) {
           return Column(
@@ -1044,7 +1027,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _isMemberActiveNow(QueryDocumentSnapshot<Map<String, dynamic>> memberDoc) {
     final memberData = memberDoc.data();
-    final currentUid = _authService.currentUser?.uid;
+    final currentUid = _viewModel.authService.currentUser?.uid;
     final memberUid = ((memberData['uid'] as String?)?.trim().isNotEmpty == true)
         ? (memberData['uid'] as String).trim()
         : memberDoc.id;

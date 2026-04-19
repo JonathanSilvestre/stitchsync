@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_i18n.dart';
-import '../services/family_service.dart';
 import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/manage_family_view_model.dart';
 import 'manage_pets_screen.dart';
 
 class ManageFamilyScreen extends StatefulWidget {
@@ -16,8 +16,8 @@ class ManageFamilyScreen extends StatefulWidget {
 }
 
 class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
-  final FamilyService _familyService = FamilyService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ManageFamilyViewModel _viewModel = ManageFamilyViewModel();
+  FirebaseAuth get _auth => _viewModel.auth;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -26,6 +26,33 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
   static const Color _errorRed = Color(0xFFD32F2F);
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
 
   String _buildInviteCode(String familyName, String familyId) {
     final prefix = familyName.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
@@ -49,22 +76,18 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
   Future<List<_MemberData>> _loadMembers(
       List<dynamic> memberUids, String ownerUid, List<dynamic> adminUids) async {
     final adminSet = adminUids.map((e) => e.toString()).toSet();
-    
-    final docs = await Future.wait(
-      memberUids.map(
-        (uid) => _firestore.collection('users').doc(uid as String).get(),
-      ),
-    );
+    final docs = await _viewModel.loadMemberProfiles(memberUids);
 
     return docs.map((doc) {
-      final data = doc.data() ?? <String, dynamic>{};
+      final data = doc['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
       final avatarId = (data['profile_avatar_id'] as String?)?.trim();
-      final isOwner = doc.id == ownerUid;
-      final isAdmin = isOwner || adminSet.contains(doc.id);
+      final uid = (doc['uid'] as String?) ?? '';
+      final isOwner = uid == ownerUid;
+      final isAdmin = isOwner || adminSet.contains(uid);
       
       return _MemberData(
-        uid: doc.id,
+        uid: uid,
         name: (username != null && username.isNotEmpty)
             ? username
             : context.tr('Member'),
@@ -114,28 +137,17 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
       return;
     }
 
-    try {
-      await _familyService.deleteFamily(familyId);
+    final ok = await _viewModel.deleteFamilyWithFeedback(
+      familyId: familyId,
+      successMessage: 'Family deleted successfully.',
+      errorMessage: 'Could not delete family.',
+    );
 
-      if (!mounted) {
-        return;
-      }
-
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('Family deleted successfully.'))),
-      );
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(
-        SnackBar(content: Text('${context.tr('Could not delete family.')} $e')),
-      );
+    if (!ok || !mounted) {
+      return;
     }
+
+    Navigator.of(context).pop();
   }
 
   @override
@@ -226,7 +238,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                               ),
                               const SizedBox(height: 20),
                               StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                                stream: _familyService.streamFamiliesForCurrentUser(),
+                                stream: _viewModel.streamFamiliesForCurrentUser(),
                                 builder: (context, snapshot) {
                                   if (snapshot.connectionState == ConnectionState.waiting) {
                                     return const Center(child: CircularProgressIndicator());
@@ -305,7 +317,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                         StreamBuilder<List<
                             QueryDocumentSnapshot<Map<String, dynamic>>>>(
                           stream:
-                              _familyService.streamFamiliesForCurrentUser(),
+                              _viewModel.streamFamiliesForCurrentUser(),
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
@@ -326,8 +338,7 @@ class _ManageFamilyScreenState extends State<ManageFamilyScreen> {
                                 (data['owner_uid'] as String?) ?? '';
                             final adminUids =
                                 (data['admin_uids'] as List<dynamic>?) ?? [];
-                            final currentUid =
-                              FirebaseAuth.instance.currentUser?.uid ?? '';
+                              final currentUid = _auth.currentUser?.uid ?? '';
                             final canDeleteFamily =
                               currentUid.isNotEmpty && ownerUid == currentUid;
 
