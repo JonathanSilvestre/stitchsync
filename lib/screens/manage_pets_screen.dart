@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../services/family_service.dart';
-import '../services/pet_service.dart';
+import '../l10n/app_i18n.dart';
+import '../utils/pet_avatar_catalog.dart';
+import '../viewmodels/screens/manage_pets_view_model.dart';
+import 'add_new_pet_screen.dart';
 
 class ManagePetsScreen extends StatefulWidget {
   const ManagePetsScreen({super.key});
@@ -12,339 +14,394 @@ class ManagePetsScreen extends StatefulWidget {
 }
 
 class _ManagePetsScreenState extends State<ManagePetsScreen> {
-  final FamilyService _familyService = FamilyService();
-  final PetService _petService = PetService();
-  String? _selectedFamilyId;
+  final ManagePetsViewModel _viewModel = ManagePetsViewModel();
 
-  Future<void> _showPetDialog({
+  static const Color _bg = Color(0xFF060E20);
+  static const Color _surface = Color(0xFF0F1930);
+  static const Color _surfaceHigh = Color(0xFF192540);
+  static const Color _textMain = Color(0xFFDEE5FF);
+  static const Color _textMuted = Color(0xFFA3AAC4);
+  static const Color _primary = Color(0xFF74B1FF);
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  Future<void> _deletePet({
     required String familyId,
-    String? petId,
-    Map<String, dynamic>? initialData,
+    required String petId,
+    required String petName,
   }) async {
-    final nameController = TextEditingController(text: initialData?['name'] as String? ?? '');
-    final breedController =
-        TextEditingController(text: initialData?['breed'] as String? ?? '');
-    final ageController = TextEditingController(
-      text: (initialData?['age'] as int?)?.toString() ?? '',
-    );
-    final notesController =
-        TextEditingController(text: initialData?['notes'] as String? ?? '');
-    final photoController =
-        TextEditingController(text: initialData?['photo_url'] as String? ?? '');
-
-    await showDialog<void>(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(petId == null ? 'Agregar mascota' : 'Editar mascota'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Nombre'),
-                ),
-                TextField(
-                  controller: breedController,
-                  decoration: const InputDecoration(labelText: 'Raza o tipo'),
-                ),
-                TextField(
-                  controller: ageController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Edad'),
-                ),
-                TextField(
-                  controller: notesController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Notas'),
-                ),
-                TextField(
-                  controller: photoController,
-                  decoration: const InputDecoration(
-                    labelText: 'URL de foto (opcional)',
-                  ),
-                ),
-              ],
-            ),
+          backgroundColor: _surfaceHigh,
+          title: Text(
+            context.tr('Delete Pet'),
+            style: const TextStyle(color: _textMain, fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            '${context.tr('Are you sure you want to delete')} $petName?',
+            style: const TextStyle(color: _textMuted),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(context.tr('Cancel'), style: const TextStyle(color: _primary)),
             ),
-            ElevatedButton(
-              onPressed: () async {
-                final name = nameController.text.trim();
-                final breed = breedController.text.trim();
-                final notes = notesController.text.trim();
-                final photoUrl = photoController.text.trim();
-                final age = int.tryParse(ageController.text.trim());
-
-                if (name.isEmpty || breed.isEmpty || age == null) {
-                  return;
-                }
-
-                if (petId == null) {
-                  await _petService.addPet(
-                    familyId: familyId,
-                    name: name,
-                    breed: breed,
-                    age: age,
-                    notes: notes,
-                    photoUrl: photoUrl,
-                  );
-                } else {
-                  await _petService.updatePet(
-                    familyId: familyId,
-                    petId: petId,
-                    name: name,
-                    breed: breed,
-                    age: age,
-                    notes: notes,
-                    photoUrl: photoUrl,
-                  );
-                }
-
-                if (!mounted) {
-                  return;
-                }
-
-                Navigator.of(context).pop();
-              },
-              child: const Text('Guardar'),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(context.tr('Delete'), style: const TextStyle(color: Color(0xFFD32F2F))),
             ),
           ],
         );
       },
     );
 
-    nameController.dispose();
-    breedController.dispose();
-    ageController.dispose();
-    notesController.dispose();
-    photoController.dispose();
+    if (confirm == true && mounted) {
+      await _viewModel.deletePetWithFeedback(
+        familyId: familyId,
+        petId: petId,
+        errorMessage: 'Could not delete pet.',
+      );
+    }
   }
 
-  Future<void> _deletePet({required String familyId, required String petId}) async {
-    final confirm = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: const Text('Eliminar mascota'),
-              content: const Text('¿Seguro que quieres eliminar esta mascota?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Eliminar'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirm) {
-      return;
-    }
-
-    await _petService.deletePet(familyId: familyId, petId: petId);
+  void _editPet({
+    required String familyId,
+    required String petId,
+    required Map<String, dynamic> petData,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AddNewPetScreen(
+          familyId: familyId,
+          petId: petId,
+          initialPetData: petData,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Administrar mascotas'),
-        backgroundColor: const Color(0xFF143A5A),
-        foregroundColor: Colors.white,
-      ),
-      backgroundColor: const Color(0xFFF4F7FB),
-      body: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-        stream: _familyService.streamFamiliesForCurrentUser(),
-        builder: (context, familiesSnapshot) {
-          if (familiesSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: _viewModel.streamFamiliesForCurrentUser(),
+      builder: (context, familiesSnapshot) {
+        if (familiesSnapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: _bg,
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
 
-          final families = familiesSnapshot.data ?? [];
-          if (families.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Text(
-                  'Primero crea o acepta una familia para empezar a registrar mascotas.',
-                  textAlign: TextAlign.center,
-                ),
+        final families = familiesSnapshot.data ?? [];
+        if (families.isEmpty) {
+          return Scaffold(
+            backgroundColor: _bg,
+            body: Center(
+              child: Text(
+                context.tr('No family found.'),
+                style: TextStyle(color: _textMuted, fontSize: 16),
               ),
-            );
-          }
+            ),
+          );
+        }
 
-          final selectedId = _selectedFamilyId ?? families.first.id;
-          if (_selectedFamilyId == null ||
-              !families.any((family) => family.id == _selectedFamilyId)) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) {
-                return;
-              }
-              setState(() {
-                _selectedFamilyId = families.first.id;
-              });
-            });
-          }
+        final family = families.first;
+        final familyId = family.id;
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: selectedId,
-                      isExpanded: true,
-                      hint: const Text('Selecciona una familia'),
-                      items: families.map((familyDoc) {
-                        final data = familyDoc.data();
-                        final familyName =
-                            (data['name'] as String?) ?? 'Familia sin nombre';
-                        return DropdownMenuItem<String>(
-                          value: familyDoc.id,
-                          child: Text(familyName),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setState(() {
-                          _selectedFamilyId = value;
-                        });
-                      },
+        return FutureBuilder<bool>(
+          future: _viewModel.isCurrentUserFamilyAdmin(familyId: familyId),
+          builder: (context, permissionSnapshot) {
+            final canManagePets = permissionSnapshot.data ?? false;
+
+            return Scaffold(
+              backgroundColor: _bg,
+              floatingActionButton: canManagePets
+                  ? FloatingActionButton(
+                      backgroundColor: _primary,
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddNewPetScreen(familyId: familyId),
+                        ),
+                      ),
+                      child: const Icon(Icons.add, color: _bg),
+                    )
+                  : null,
+              body: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFF0A1730),
+                            _bg,
+                            const Color(0xFF050A17),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              Expanded(
-                child: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                  stream: _petService.streamPets(selectedId),
-                  builder: (context, petSnapshot) {
-                    if (petSnapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final pets = petSnapshot.data ?? [];
-                    if (pets.isEmpty) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 56,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          color: const Color(0xFF0A1730),
+                          child: Row(
                             children: [
-                              const Text(
-                                'No hay mascotas en esta familia todavía.',
-                                textAlign: TextAlign.center,
+                              IconButton(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.arrow_back, color: _textMain, size: 24),
                               ),
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
-                                onPressed: () => _showPetDialog(familyId: selectedId),
-                                icon: const Icon(Icons.add),
-                                label: const Text('Agregar mascota'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1D6A7B),
-                                  foregroundColor: Colors.white,
+                              Expanded(
+                                child: Text(
+                                  context.tr('Manage Pets'),
+                                  style: const TextStyle(
+                                    color: _textMain,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.4,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      itemCount: pets.length,
-                      itemBuilder: (context, index) {
-                        final petDoc = pets[index];
-                        final pet = petDoc.data();
-                        final name = (pet['name'] as String?) ?? 'Sin nombre';
-                        final breed = (pet['breed'] as String?) ?? 'Sin tipo';
-                        final notes = (pet['notes'] as String?) ?? '';
-                        final age = pet['age']?.toString() ?? '-';
-                        final photoUrl = (pet['photo_url'] as String?) ?? '';
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: const Color(0xFFE9F3F7),
-                              backgroundImage: photoUrl.isNotEmpty
-                                  ? NetworkImage(photoUrl)
-                                  : null,
-                              child: photoUrl.isEmpty
-                                  ? const Icon(Icons.pets, color: Color(0xFF1D6A7B))
-                                  : null,
-                            ),
-                            title: Text(name),
-                            subtitle: Text('Raza/tipo: $breed\nEdad: $age\n$notes'),
-                            isThreeLine: true,
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'edit') {
-                                  _showPetDialog(
-                                    familyId: selectedId,
-                                    petId: petDoc.id,
-                                    initialData: pet,
-                                  );
-                                }
-
-                                if (value == 'delete') {
-                                  _deletePet(familyId: selectedId, petId: petDoc.id);
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('Editar'),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  context.tr('Your Furry Family'),
+                                  style: const TextStyle(
+                                    color: _textMain,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.5,
+                                  ),
                                 ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Eliminar'),
+                                const SizedBox(height: 8),
+                                Text(
+                                  context.tr('Keep track of everyone in the household.'),
+                                  style: const TextStyle(
+                                    color: _textMuted,
+                                    fontSize: 16,
+                                    height: 1.45,
+                                  ),
+                                ),
+                                const SizedBox(height: 22),
+                                StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                                  stream: _viewModel.streamPets(familyId),
+                                  builder: (context, petsSnapshot) {
+                                    if (petsSnapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    }
+
+                                    final pets = petsSnapshot.data ?? [];
+                                    if (pets.isEmpty) {
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 60),
+                                          const Icon(Icons.pets_outlined, color: _textMuted, size: 52),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            canManagePets
+                                                ? context.tr('Add all your companions to stay connected')
+                                                : context.tr('No pets in this family.'),
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: _textMuted,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 30),
+                                        ],
+                                      );
+                                    }
+
+                                    return Column(
+                                      children: [
+                                        ...pets.map((petDoc) {
+                                          final petData = petDoc.data();
+                                          final name = (petData['name'] as String?) ?? context.tr('Pet');
+                                          final breed = (petData['breed'] as String?) ?? context.tr('Unknown');
+                                          final age = petData['age'] as int? ?? 0;
+                                          final photoUrl = (petData['photo_url'] as String?) ?? '';
+                                          final avatarId = (petData['avatar_id'] as String?) ?? '';
+                                          final notes = (petData['notes'] as String?) ?? '';
+
+                                          var statusLabel = context.tr('ACTIVE');
+                                          final lowerNotes = notes.toLowerCase();
+                                          if (lowerNotes.contains('sitter')) {
+                                            statusLabel = context.tr('AT SITTER\'S');
+                                          } else if (lowerNotes.contains('vet')) {
+                                            statusLabel = context.tr('AT VET');
+                                          }
+
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 16),
+                                            padding: const EdgeInsets.all(16),
+                                            decoration: BoxDecoration(
+                                              color: _surface,
+                                              borderRadius: BorderRadius.circular(24),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 100,
+                                                  height: 100,
+                                                  decoration: BoxDecoration(
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    color: _surfaceHigh,
+                                                  ),
+                                                  child: buildPetAvatarVisual(
+                                                    photoUrl: photoUrl,
+                                                    avatarId: avatarId,
+                                                    size: 100,
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    iconSize: 48,
+                                                    placeholderBackground: _surfaceHigh,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 14),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        name,
+                                                        style: const TextStyle(
+                                                          color: _textMain,
+                                                          fontSize: 18,
+                                                          fontWeight: FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        '$breed • $age ${context.tr('Years')}',
+                                                        style: const TextStyle(
+                                                          color: _textMuted,
+                                                          fontSize: 14,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: _surfaceHigh,
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: Text(
+                                                          statusLabel,
+                                                          style: const TextStyle(
+                                                            color: _primary,
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w700,
+                                                            letterSpacing: 0.5,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (canManagePets)
+                                                  Column(
+                                                    mainAxisAlignment: MainAxisAlignment.start,
+                                                    children: [
+                                                      IconButton(
+                                                        onPressed: () => _editPet(
+                                                          familyId: familyId,
+                                                          petId: petDoc.id,
+                                                          petData: petData,
+                                                        ),
+                                                        icon: const Icon(Icons.edit, color: _primary),
+                                                      ),
+                                                      IconButton(
+                                                        onPressed: () => _deletePet(
+                                                          familyId: familyId,
+                                                          petId: petDoc.id,
+                                                          petName: name,
+                                                        ),
+                                                        icon: const Icon(
+                                                          Icons.delete,
+                                                          color: Color(0xFFD32F2F),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                              ],
+                                            ),
+                                          );
+                                        }),
+                                        if (!canManagePets)
+                                          Container(
+                                            width: double.infinity,
+                                            margin: const EdgeInsets.only(top: 8),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 14, vertical: 10),
+                                            decoration: BoxDecoration(
+                                              color: _surface,
+                                              borderRadius: BorderRadius.circular(14),
+                                              border: Border.all(
+                                                  color: _textMuted.withValues(alpha: 0.25)),
+                                            ),
+                                            child: Text(
+                                              context.tr('Member mode: you can only view pets.'),
+                                              style: const TextStyle(color: _textMuted, fontSize: 13),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: _selectedFamilyId == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _showPetDialog(familyId: _selectedFamilyId!),
-              backgroundColor: const Color(0xFF1D6A7B),
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add),
-              label: const Text('Mascota'),
-            ),
+            );
+          },
+        );
+      },
     );
   }
 }
