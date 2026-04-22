@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/family_service.dart';
+import '../l10n/app_i18n.dart';
+import '../viewmodels/screens/manage_families_view_model.dart';
 
 class ManageFamiliesScreen extends StatefulWidget {
   const ManageFamiliesScreen({super.key});
@@ -12,8 +13,38 @@ class ManageFamiliesScreen extends StatefulWidget {
 }
 
 class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
-  final FamilyService _familyService = FamilyService();
+  final ManageFamiliesViewModel _viewModel = ManageFamiliesViewModel();
+  FirebaseAuth get _auth => _viewModel.auth;
   bool _isProcessing = false;
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {
+      _isProcessing = _viewModel.isLoading;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
 
   Future<void> _showFamilyDialog({
     String? familyId,
@@ -25,15 +56,17 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(familyId == null ? 'Crear familia' : 'Editar familia'),
+          title: Text(
+            familyId == null ? context.tr('Create family') : context.tr('Edit family'),
+          ),
           content: TextField(
             controller: controller,
-            decoration: const InputDecoration(labelText: 'Nombre de familia'),
+            decoration: InputDecoration(labelText: context.tr('Family name')),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -42,32 +75,22 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                   return;
                 }
 
-                try {
-                  if (familyId == null) {
-                    await _familyService.createFamily(value);
-                  } else {
-                    await _familyService.updateFamilyName(
-                      familyId: familyId,
-                      familyName: value,
-                    );
-                  }
+                final ok = await _viewModel.saveFamilyWithFeedback(
+                  value: value,
+                  familyId: familyId,
+                );
 
-                  if (!mounted) {
-                    return;
-                  }
-
-                  Navigator.of(context).pop();
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
+                if (!ok) {
+                  return;
                 }
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
               },
-              child: const Text('Guardar'),
+              child: Text(context.tr('Save')),
             ),
           ],
         );
@@ -87,18 +110,18 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Invitar por correo'),
+          title: Text(context.tr('Invite by email')),
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Correo del familiar',
+            decoration: InputDecoration(
+              labelText: context.tr('Family member email'),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -107,34 +130,24 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                   return;
                 }
 
-                try {
-                  await _familyService.inviteByEmail(
-                    familyId: familyId,
-                    familyName: familyName,
-                    email: email,
-                  );
+                final ok = await _viewModel.inviteByEmailWithFeedback(
+                  familyId: familyId,
+                  familyName: familyName,
+                  email: email,
+                  successMessage: 'Invitation created successfully',
+                );
 
-                  if (!mounted) {
-                    return;
-                  }
-
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Invitación creada correctamente'),
-                    ),
-                  );
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
+                if (!ok) {
+                  return;
                 }
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
               },
-              child: const Text('Invitar'),
+              child: Text(context.tr('Invite')),
             ),
           ],
         );
@@ -148,18 +161,18 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
     final confirm = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Eliminar familia'),
-            content: const Text(
-              'Esta acción eliminará la familia, sus mascotas e invitaciones.',
+            title: Text(context.tr('Delete family')),
+            content: Text(
+              context.tr('This action will delete the family, its pets, and invitations.'),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancelar'),
+                child: Text(context.tr('Cancel')),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Eliminar'),
+                child: Text(context.tr('Delete')),
               ),
             ],
           ),
@@ -170,57 +183,29 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
       return;
     }
 
-    try {
-      await _familyService.deleteFamily(familyId);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo eliminar la familia')),
-      );
-    }
+    await _viewModel.deleteFamilyWithFeedback(
+      familyId: familyId,
+      errorMessage: 'Could not delete family.',
+    );
   }
 
   Future<void> _respondToInvitation({
     required String invitationId,
     required bool accept,
   }) async {
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      if (accept) {
-        await _familyService.acceptInvitation(invitationId: invitationId);
-      } else {
-        await _familyService.rejectInvitation(invitationId: invitationId);
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-        });
-      }
-    }
+    await _viewModel.respondToInvitationWithFeedback(
+      invitationId: invitationId,
+      accept: accept,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid = _auth.currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Administrar familias'),
+        title: Text(context.tr('Manage families')),
         backgroundColor: const Color(0xFF143A5A),
         foregroundColor: Colors.white,
       ),
@@ -229,16 +214,16 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
         backgroundColor: const Color(0xFF1D6A7B),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
-        label: const Text('Nueva familia'),
+        label: Text(context.tr('New family')),
       ),
       backgroundColor: const Color(0xFFF4F7FB),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _SectionTitle('Mis familias'),
+          _SectionTitle(context.tr('My families')),
           const SizedBox(height: 8),
           StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-            stream: _familyService.streamFamiliesForCurrentUser(),
+            stream: _viewModel.streamFamiliesForCurrentUser(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -246,15 +231,15 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
 
               final docs = snapshot.data ?? [];
               if (docs.isEmpty) {
-                return const _InfoCard(
-                  message: 'Aún no tienes familias. Crea una para empezar.',
+                return _InfoCard(
+                  message: context.tr('You do not have families yet. Create one to get started.'),
                 );
               }
 
               return Column(
                 children: docs.map((doc) {
                   final data = doc.data();
-                  final name = (data['name'] as String?) ?? 'Sin nombre';
+                  final name = (data['name'] as String?) ?? context.tr('Unnamed');
                   final ownerUid = (data['owner_uid'] as String?) ?? '';
                   final members =
                       (data['member_uids'] as List<dynamic>? ?? const []).length;
@@ -268,7 +253,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                     ),
                     child: ListTile(
                       title: Text(name),
-                      subtitle: Text('Miembros: $members'),
+                      subtitle: Text('${context.tr('Members')}: $members'),
                       trailing: PopupMenuButton<String>(
                         onSelected: (value) {
                           if (value == 'invite') {
@@ -288,21 +273,21 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                         },
                         itemBuilder: (_) {
                           final items = <PopupMenuEntry<String>>[
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'invite',
-                              child: Text('Invitar por correo'),
+                              child: Text(context.tr('Invite by email')),
                             ),
                           ];
 
                           if (isOwner) {
                             items.addAll([
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                 value: 'edit',
-                                child: Text('Editar nombre'),
+                                child: Text(context.tr('Edit name')),
                               ),
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                 value: 'delete',
-                                child: Text('Eliminar familia'),
+                                child: Text(context.tr('Delete family')),
                               ),
                             ]);
                           }
@@ -317,10 +302,10 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
             },
           ),
           const SizedBox(height: 18),
-          const _SectionTitle('Invitaciones pendientes'),
+          _SectionTitle(context.tr('Pending invitations')),
           const SizedBox(height: 8),
           StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-            stream: _familyService.streamPendingInvitationsForCurrentUser(),
+            stream: _viewModel.streamPendingInvitationsForCurrentUser(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -328,8 +313,8 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
 
               final docs = snapshot.data ?? [];
               if (docs.isEmpty) {
-                return const _InfoCard(
-                  message: 'No tienes invitaciones pendientes por ahora.',
+                return _InfoCard(
+                  message: context.tr('You have no pending invitations right now.'),
                 );
               }
 
@@ -337,7 +322,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                 children: docs.map((doc) {
                   final data = doc.data();
                   final familyName =
-                      (data['family_name'] as String?) ?? 'Familia sin nombre';
+                      (data['family_name'] as String?) ?? context.tr('Unnamed family');
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -367,7 +352,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                                           invitationId: doc.id,
                                           accept: false,
                                         ),
-                                child: const Text('Rechazar'),
+                                child: Text(context.tr('Reject')),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -383,7 +368,7 @@ class _ManageFamiliesScreenState extends State<ManageFamiliesScreen> {
                                   backgroundColor: const Color(0xFF1D6A7B),
                                   foregroundColor: Colors.white,
                                 ),
-                                child: const Text('Aceptar'),
+                                child: Text(context.tr('Accept')),
                               ),
                             ),
                           ],

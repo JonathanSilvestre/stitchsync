@@ -1,5 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
+
+import '../l10n/app_i18n.dart';
+import '../utils/pet_avatar_catalog.dart';
+import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/profile_view_model.dart';
 import 'account_settings_screen.dart';
 import 'home_screen.dart';
 import 'manage_family_screen.dart';
@@ -25,34 +30,374 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const Color _errorRed = Color(0xFFD32F2F);
   static const Color _surfaceBright = Color(0xFF384A62);
 
-  late AuthService _authService;
+  final ProfileViewModel _viewModel = ProfileViewModel();
+  FirebaseFirestore get _firestore => _viewModel.firestore;
+
   String? _userName;
-  bool _isLoading = true;
+  String? _activeFamilyId;
+  String? _activePetId;
+  String _activePetName = 'Pet';
+  String _activePetBreed = 'Breed not set';
+  String _activePetAgeLabel = 'Age not set';
+  String _activePetPhotoUrl = '';
+  String _activePetAvatarId = '';
+  String _profileAvatarId = kUserAvatarChoices.first.id;
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
-    _authService = AuthService();
+    _viewModel.addListener(_onViewModelChanged);
     _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
     try {
-      final profile = await _authService.getCurrentUserProfile();
-      final currentUser = _authService.currentUser;
-      
+      final profile = await _viewModel.getCurrentUserProfileWithLoading();
+      final currentUser = _viewModel.authService.currentUser;
+      final profileUsername = (profile?['username'] as String?)?.trim();
+      final fallbackUsername = currentUser?.email?.split('@').first;
+      final activeFamilyId = (profile?['active_family_id'] as String?)?.trim();
+      final activePetId = (profile?['active_pet_id'] as String?)?.trim();
+      final profileAvatarId = (profile?['profile_avatar_id'] as String?)?.trim();
+
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
-        _userName = profile?['username'] ?? currentUser?.email?.split('@')[0] ?? 'Usuario';
-        _isLoading = false;
+        _userName = (profileUsername != null && profileUsername.isNotEmpty)
+            ? profileUsername
+            : (fallbackUsername != null && fallbackUsername.isNotEmpty)
+                ? fallbackUsername
+            : context.tr('User');
+        _activeFamilyId = (activeFamilyId != null && activeFamilyId.isNotEmpty)
+            ? activeFamilyId
+            : null;
+        _activePetId = (activePetId != null && activePetId.isNotEmpty) ? activePetId : null;
+        _profileAvatarId = resolveUserAvatar(profileAvatarId).id;
       });
-    } catch (e) {
+
+      await _loadActivePetContext();
+    } catch (_) {
       if (mounted) {
         setState(() {
-          _userName = 'Usuario';
-          _isLoading = false;
+          _userName = context.tr('User');
+          _activePetName = context.tr('Pet');
+          _activePetBreed = context.tr('Breed not set');
+          _activePetAgeLabel = context.tr('Age not set');
+          _activePetPhotoUrl = '';
+          _activePetAvatarId = '';
+          _profileAvatarId = kUserAvatarChoices.first.id;
         });
       }
     }
+  }
+
+  String _formatPetAgeLabel(dynamic ageValue) {
+    if (ageValue is num) {
+      final age = ageValue.toInt();
+      if (age == 1) {
+        return '1 ${context.tr('years')}';
+      }
+      if (age > 1) {
+        return '$age ${context.tr('years')}';
+      }
+    }
+
+    return context.tr('Age not set');
+  }
+
+  Future<void> _loadActivePetContext() async {
+    var familyId = _activeFamilyId;
+    if (familyId == null || familyId.isEmpty) {
+      final families = await _viewModel.getCurrentUserFamilies();
+      if (families.isNotEmpty) {
+        familyId = families.first.id;
+      }
+    }
+
+    if (familyId == null || familyId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeFamilyId = null;
+        _activePetId = null;
+        _activePetName = context.tr('Pet');
+        _activePetBreed = context.tr('No family assigned');
+        _activePetAgeLabel = context.tr('Age not set');
+        _activePetPhotoUrl = '';
+        _activePetAvatarId = '';
+      });
+      return;
+    }
+
+    final pets = await _viewModel.getFamilyPets(familyId);
+    if (pets.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeFamilyId = familyId;
+        _activePetId = null;
+        _activePetName = context.tr('No pet yet');
+        _activePetBreed = context.tr('No pets in this family');
+        _activePetAgeLabel = context.tr('Add a pet');
+        _activePetPhotoUrl = '';
+        _activePetAvatarId = '';
+      });
+      return;
+    }
+
+    late QueryDocumentSnapshot<Map<String, dynamic>> selectedPet;
+    try {
+      selectedPet = pets.firstWhere((pet) => pet.id == _activePetId);
+    } catch (_) {
+      selectedPet = pets.first;
+    }
+
+    final petData = selectedPet.data();
+    final petName = (petData['name'] as String?)?.trim();
+    final petBreed = (petData['breed'] as String?)?.trim();
+    final photoUrl = (petData['photo_url'] as String?)?.trim();
+    final avatarId = (petData['avatar_id'] as String?)?.trim();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeFamilyId = familyId;
+      _activePetId = selectedPet.id;
+      _activePetName = (petName != null && petName.isNotEmpty) ? petName : context.tr('Pet');
+      _activePetBreed =
+          (petBreed != null && petBreed.isNotEmpty) ? petBreed : context.tr('Breed not set');
+      _activePetAgeLabel = _formatPetAgeLabel(petData['age']);
+      _activePetPhotoUrl = (photoUrl != null && photoUrl.isNotEmpty) ? photoUrl : '';
+      _activePetAvatarId = (avatarId != null && avatarId.isNotEmpty)
+          ? avatarId
+          : kPetAvatarChoices.first.id;
+    });
+  }
+
+  Future<void> _applyPetSelection(QueryDocumentSnapshot<Map<String, dynamic>> petDoc) async {
+    final familyId = _activeFamilyId;
+    if (familyId == null || familyId.isEmpty) {
+      return;
+    }
+
+    final petData = petDoc.data();
+    final petName = (petData['name'] as String?)?.trim();
+    final petBreed = (petData['breed'] as String?)?.trim();
+    final photoUrl = (petData['photo_url'] as String?)?.trim();
+    final avatarId = (petData['avatar_id'] as String?)?.trim();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activePetId = petDoc.id;
+      _activePetName = (petName != null && petName.isNotEmpty) ? petName : 'Pet';
+      _activePetBreed = (petBreed != null && petBreed.isNotEmpty) ? petBreed : 'Breed not set';
+      _activePetAgeLabel = _formatPetAgeLabel(petData['age']);
+      _activePetPhotoUrl = (photoUrl != null && photoUrl.isNotEmpty) ? photoUrl : '';
+      _activePetAvatarId = (avatarId != null && avatarId.isNotEmpty)
+          ? avatarId
+          : kPetAvatarChoices.first.id;
+    });
+
+    await _viewModel.saveActivePetSelectionWithFeedback(
+      familyId: familyId,
+      petId: petDoc.id,
+      errorMessage: 'Could not save active pet.',
+    );
+  }
+
+  Future<void> _openPetSwitcher() async {
+    final familyId = _activeFamilyId;
+    if (familyId == null || familyId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('First create or select a family.'))),
+      );
+      return;
+    }
+
+    final pets = await _viewModel.getFamilyPets(familyId);
+    if (pets.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('No pets available yet'))),
+      );
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final selectedPetId = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          decoration: BoxDecoration(
+            color: _surfaceContainer,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        context.tr('Change Pet'),
+                        style: const TextStyle(
+                          color: _textMain,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close, color: _textMuted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  context.tr('Pick the pet to sync from your profile.'),
+                  style: const TextStyle(color: _textMuted),
+                ),
+                const SizedBox(height: 14),
+                ...pets.map((petDoc) {
+                  final petData = petDoc.data();
+                  final name = ((petData['name'] as String?) ?? context.tr('Pet')).trim();
+                  final breed = ((petData['breed'] as String?) ?? context.tr('Unknown')).trim();
+                  final photoUrl = ((petData['photo_url'] as String?) ?? '').trim();
+                  final avatarId = ((petData['avatar_id'] as String?) ?? '').trim();
+                  final isSelected = petDoc.id == _activePetId;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(sheetContext, petDoc.id),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? _surfaceContainerHighest : _background,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: _surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: buildPetAvatarVisual(
+                                photoUrl: photoUrl,
+                                avatarId: avatarId,
+                                size: 52,
+                                borderRadius: BorderRadius.circular(14),
+                                iconSize: 24,
+                                placeholderBackground: _surfaceContainerHighest,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      color: _textMain,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    breed,
+                                    style: const TextStyle(
+                                      color: _textMuted,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(Icons.check_circle, color: _primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedPetId == null) {
+      return;
+    }
+
+    late QueryDocumentSnapshot<Map<String, dynamic>> selectedPet;
+    try {
+      selectedPet = pets.firstWhere((pet) => pet.id == selectedPetId);
+    } catch (_) {
+      selectedPet = pets.first;
+    }
+
+    await _applyPetSelection(selectedPet);
   }
 
   void _handleLogout() {
@@ -61,34 +406,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (BuildContext context) => AlertDialog(
         backgroundColor: _surfaceContainer,
-        title: const Text(
-          'Log Out',
-          style: TextStyle(color: _textMain, fontWeight: FontWeight.bold),
+        title: Text(
+          context.tr('Log out'),
+          style: const TextStyle(color: _textMain, fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          'Are you sure you want to log out?',
-          style: TextStyle(color: _textMuted),
+        content: Text(
+          context.tr('Are you sure you want to log out?'),
+          style: const TextStyle(color: _textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: _primary),
+            child: Text(
+              context.tr('Cancel'),
+              style: const TextStyle(color: _primary),
             ),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              await _authService.logout();
+              await _viewModel.authService.logout();
               nav.pushNamedAndRemoveUntil(
                 '/login',
                 (route) => false,
               );
             },
-            child: const Text(
-              'Log Out',
-              style: TextStyle(color: _errorRed),
+            child: Text(
+              context.tr('Log out'),
+              style: const TextStyle(color: _errorRed),
             ),
           ),
         ],
@@ -114,7 +459,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: _isLoading
+        body: _viewModel.isLoading
           ? _buildLoadingState()
           : Stack(
               children: [
@@ -191,9 +536,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'Profile',
-          style: TextStyle(
+        Text(
+          context.tr('Profile'),
+          style: const TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
             color: _textMain,
@@ -221,77 +566,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileHeader() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _surfaceBright.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          // User avatar
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: _primary.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.person,
-              size: 40,
-              color: _primary,
+    return FutureBuilder<({String roleName, String roleLabel})>(
+      future: _getCurrentUserRole(),
+      builder: (context, roleSnapshot) {
+        final roleName = roleSnapshot.data?.roleName ?? context.tr('Member');
+        final roleLabel = roleSnapshot.data?.roleLabel ?? context.tr('MEMBER');
+        
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: _surfaceBright.withValues(alpha: 0.3),
+              width: 1,
             ),
           ),
-          const SizedBox(width: 16),
-          // User info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _userName ?? 'User',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: _textMain,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              // User avatar
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Family Administrator',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _textMuted,
+                child: Center(
+                  child: buildUserAvatarVisual(
+                    avatarId: _profileAvatarId,
+                    size: 72,
+                    borderRadius: BorderRadius.circular(14),
+                    emojiSize: 28,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _primary.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'ADMIN',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _primary,
-                      fontWeight: FontWeight.w600,
+              ),
+              const SizedBox(width: 16),
+              // User info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _userName ?? context.tr('User'),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _textMain,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      roleName,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _primary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        roleLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+  
+  Future<({String roleName, String roleLabel})> _getCurrentUserRole() async {
+    final noFamilyName = context.tr('No family');
+    final noFamilyLabel = context.tr('NO FAMILY');
+    final ownerName = context.tr('Family Owner');
+    final ownerLabel = context.tr('OWNER');
+    final adminName = context.tr('Family Administrator');
+    final adminLabel = context.tr('ADMIN');
+    final memberName = context.tr('Family Member');
+    final memberLabel = context.tr('MEMBER');
+
+    return _viewModel.getCurrentUserRole(
+      activeFamilyId: _activeFamilyId,
+      noFamilyName: noFamilyName,
+      noFamilyLabel: noFamilyLabel,
+      ownerName: ownerName,
+      ownerLabel: ownerLabel,
+      adminName: adminName,
+      adminLabel: adminLabel,
+      memberName: memberName,
+      memberLabel: memberLabel,
     );
   }
 
@@ -299,9 +678,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'SYNCING WITH',
-          style: TextStyle(
+        Text(
+          context.tr('SYNCING WITH'),
+          style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: _textMuted,
@@ -309,57 +688,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _surfaceContainer,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
             borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: _primary.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.pets,
-                  color: _primary,
-                  size: 28,
-                ),
+            onTap: _openPetSwitcher,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _surfaceContainer,
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Stitch',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: _textMain,
-                      ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: _primary.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Poodle Mix • 2y',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _textMuted,
-                      ),
+                    child: buildPetAvatarVisual(
+                      photoUrl: _activePetPhotoUrl,
+                      avatarId: _activePetAvatarId,
+                      size: 56,
+                      borderRadius: BorderRadius.circular(12),
+                      iconSize: 30,
+                      placeholderBackground: _primary.withValues(alpha: 0.2),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _activePetName,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: _textMain,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$_activePetBreed • $_activePetAgeLabel',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _openPetSwitcher,
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      color: _textMuted,
+                      size: 24,
+                    ),
+                  ),
+                ],
               ),
-              const Icon(
-                Icons.chevron_right,
-                color: _textMuted,
-                size: 24,
-              ),
-            ],
+            ),
           ),
         ),
       ],
@@ -367,92 +759,321 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildFamilySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'FAMILY MEMBERS',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: _textMuted,
-                letterSpacing: 0.05,
-              ),
-            ),
-            const Text(
-              '4 active',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: _primary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            // Avatar placeholders
-            _buildAvatarBubble(0),
-            Transform.translate(
-              offset: const Offset(-12, 0),
-              child: _buildAvatarBubble(1),
-            ),
-            Transform.translate(
-              offset: const Offset(-24, 0),
-              child: _buildAvatarBubble(2),
-            ),
-            Transform.translate(
-              offset: const Offset(-36, 0),
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: _surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: _surfaceContainer,
-                    width: 2,
-                  ),
-                ),
-                child: const Center(
-                  child: Text(
-                    '+1',
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: _viewModel.streamFamiliesForCurrentUser(),
+      builder: (context, familySnapshot) {
+        if (familySnapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    context.tr('FAMILY MEMBERS'),
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: _textMuted,
+                      letterSpacing: 0.05,
                     ),
+                  ),
+                  Text(
+                    '0 ${context.tr('active')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const SizedBox(
+                height: 48,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          );
+        }
+
+        final families = familySnapshot.data ?? const [];
+
+        if (families.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    context.tr('FAMILY MEMBERS'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _textMuted,
+                      letterSpacing: 0.05,
+                    ),
+                  ),
+                  Text(
+                    '0 ${context.tr('active')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surfaceContainer,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  context.tr('No family members yet.'),
+                  style: const TextStyle(
+                    color: _textMuted,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        late QueryDocumentSnapshot<Map<String, dynamic>> selectedFamily;
+        try {
+          selectedFamily = families.firstWhere((family) => family.id == _activeFamilyId);
+        } catch (_) {
+          selectedFamily = families.first;
+        }
+
+        final familyData = selectedFamily.data();
+        final memberUids = (familyData['member_uids'] as List<dynamic>? ?? const [])
+            .map((memberUid) => memberUid.toString().trim())
+            .where((memberUid) => memberUid.isNotEmpty)
+            .toList(growable: false);
+
+        if (memberUids.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    context.tr('FAMILY MEMBERS'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _textMuted,
+                      letterSpacing: 0.05,
+                    ),
+                  ),
+                  Text(
+                    '0 ${context.tr('active')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surfaceContainer,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  context.tr('No family members yet.'),
+                  style: const TextStyle(
+                    color: _textMuted,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final queryUids = memberUids.take(10).toList(growable: false);
+
+        return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: _firestore
+              .collection('users')
+              .where(FieldPath.documentId, whereIn: queryUids)
+              .snapshots()
+              .map((snapshot) {
+            final docs = snapshot.docs.toList(growable: false);
+            docs.sort((left, right) {
+              final leftIndex = memberUids.indexOf(left.id);
+              final rightIndex = memberUids.indexOf(right.id);
+              return leftIndex.compareTo(rightIndex);
+            });
+            return docs;
+          }),
+          builder: (context, membersSnapshot) {
+            final members = membersSnapshot.data ?? const [];
+            final activeCount = members.where((member) => _isMemberActiveNow(member)).length;
+            final visibleMembers = members.take(3).toList(growable: false);
+            final hiddenCount = members.length - visibleMembers.length;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      context.tr('FAMILY MEMBERS'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _textMuted,
+                        letterSpacing: 0.05,
+                      ),
+                    ),
+                    Text(
+                      '$activeCount ${context.tr('active')}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (members.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _surfaceContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      context.tr('No family members yet.'),
+                      style: const TextStyle(
+                        color: _textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  )
+                else
+                  SizedBox(
+                    height: 48,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (var index = 0; index < visibleMembers.length; index++)
+                          Positioned(
+                            left: index * 36,
+                            child: _buildAvatarBubbleFromMember(
+                              memberDoc: visibleMembers[index],
+                              index: index,
+                            ),
+                          ),
+                        if (hiddenCount > 0)
+                          Positioned(
+                            left: visibleMembers.length * 36,
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: _surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: _surfaceContainer,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '+$hiddenCount',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textMuted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _buildAvatarBubble(int index) {
-    final colors = [_primary, Color(0xFF6D9CFE), Color(0xFFE8AAFF)];
+  bool _isMemberActiveNow(QueryDocumentSnapshot<Map<String, dynamic>> memberDoc) {
+    final memberData = memberDoc.data();
+    final currentUid = _viewModel.authService.currentUser?.uid;
+    final memberUid = ((memberData['uid'] as String?)?.trim().isNotEmpty == true)
+        ? (memberData['uid'] as String).trim()
+        : memberDoc.id;
+    if (currentUid != null && memberUid == currentUid) {
+      return true;
+    }
+
+    if (memberData['is_online'] != true) {
+      return false;
+    }
+
+    final lastSeenAt = memberData['last_seen_at'];
+    if (lastSeenAt is! Timestamp) {
+      return false;
+    }
+
+    final lastSeen = lastSeenAt.toDate();
+    return DateTime.now().difference(lastSeen) <= const Duration(minutes: 2);
+  }
+
+  Widget _buildAvatarBubbleFromMember({
+    required QueryDocumentSnapshot<Map<String, dynamic>> memberDoc,
+    required int index,
+  }) {
+    final memberData = memberDoc.data();
+    final profileAvatarId = (memberData['profile_avatar_id'] as String?)?.trim();
+    final resolvedAvatarId = resolveUserAvatar(profileAvatarId).id;
+
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: colors[index % colors.length].withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: _surfaceContainer,
           width: 2,
         ),
       ),
-      child: Icon(
-        Icons.person,
-        size: 24,
-        color: colors[index % colors.length],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: buildUserAvatarVisual(
+          avatarId: resolvedAvatarId,
+          size: 48,
+          borderRadius: BorderRadius.circular(24),
+          emojiSize: 18,
+        ),
       ),
     );
   }
@@ -461,8 +1082,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'PREFERENCES',
+        Text(
+          context.tr('PREFERENCES'),
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -473,21 +1094,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.people,
-          title: 'Manage Family & Pets',
-          subtitle: 'Add or remove members and pets',
-          onTap: () {
-            Navigator.of(context).push(
+          title: context.tr('Manage Family & Pets'),
+          subtitle: context.tr('Add or remove members and pets'),
+          onTap: () async {
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const ManageFamilyScreen(),
               ),
             );
+
+            await _loadActivePetContext();
           },
         ),
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.notifications,
-          title: 'Notifications',
-          subtitle: 'Manage push and email alerts',
+          title: context.tr('Notifications'),
+          subtitle: context.tr('Manage push and email alerts'),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -499,15 +1122,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         _buildPreferenceItem(
           icon: Icons.settings,
-          title: 'Account Settings',
-          subtitle: 'Email, password and security',
-                 onTap: () {
-                   Navigator.of(context).push(
-                     MaterialPageRoute(
-                       builder: (_) => const AccountSettingsScreen(),
-                     ),
-                   );
-                 },
+          title: context.tr('Account Settings'),
+          subtitle: context.tr('Email, password and security'),
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AccountSettingsScreen(),
+              ),
+            );
+            await _loadUserData();
+          },
         ),
       ],
     );
@@ -601,9 +1225,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               size: 20,
             ),
             const SizedBox(width: 12),
-            const Text(
-              'Log Out',
-              style: TextStyle(
+            Text(
+              context.tr('Log out'),
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: _errorRed,

@@ -3,8 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_i18n.dart';
 import 'create_family_screen.dart';
-import '../services/family_service.dart';
+import '../utils/user_avatar_catalog.dart';
+import '../viewmodels/screens/family_view_model.dart';
 
 class FamilyTabContent extends StatefulWidget {
   const FamilyTabContent({super.key});
@@ -14,8 +16,9 @@ class FamilyTabContent extends StatefulWidget {
 }
 
 class _FamilyTabContentState extends State<FamilyTabContent> {
-  final FamilyService _familyService = FamilyService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FamilyViewModel _viewModel = FamilyViewModel();
+  FirebaseFirestore get _firestore => _viewModel.firestore;
+  FirebaseAuth get _auth => _viewModel.auth;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF0F1930);
@@ -24,6 +27,44 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+    _syncMembershipIndex();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  Future<void> _syncMembershipIndex() async {
+    try {
+      await _viewModel.syncMembershipIndex();
+    } catch (_) {
+      // Best-effort sync; UI can continue with existing data.
+    }
+  }
+
   Future<void> _openCreateFamilyScreen() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -31,78 +72,70 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
       ),
     );
 
+    await _syncMembershipIndex();
+
     if (mounted) {
       setState(() {});
     }
   }
 
-  Future<void> _showInviteDialog({
-    required String familyId,
-    required String familyName,
-  }) async {
-    String emailValue = '';
+  Future<void> _showJoinByCodeDialog() async {
+    String codeValue = '';
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: _surfaceHigh,
-          title: const Text(
-            'Invitar miembro',
-            style: TextStyle(color: _textMain),
+          title: Text(
+            context.tr('Unirme con código'),
+            style: const TextStyle(color: _textMain),
           ),
           content: TextFormField(
-            onChanged: (value) => emailValue = value,
-            keyboardType: TextInputType.emailAddress,
+            onChanged: (value) => codeValue = value,
+            textCapitalization: TextCapitalization.characters,
             style: const TextStyle(color: _textMain),
-            decoration: const InputDecoration(
-              labelText: 'Correo electrónico',
-              labelStyle: TextStyle(color: _textMuted),
+            decoration: InputDecoration(
+              labelText: context.tr('Invitation code'),
+              hintText: context.tr('e.g. STITCH-ABC'),
+              labelStyle: const TextStyle(color: _textMuted),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () async {
-                final email = emailValue.trim();
-                if (email.isEmpty || !email.contains('@')) {
+                final code = codeValue.trim();
+                if (code.isEmpty) {
                   return;
                 }
 
-                try {
-                  await _familyService.inviteByEmail(
-                    familyId: familyId,
-                    familyName: familyName,
-                    email: email,
-                  );
-
-                  if (!dialogContext.mounted) {
-                    return;
-                  }
-
-                  Navigator.of(dialogContext).pop();
-
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invitación enviada')),
-                  );
-                } on FirebaseAuthException catch (e) {
-                  if (!mounted) {
-                    return;
-                  }
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_familyService.getReadableError(e))),
-                  );
+                final joined = await _viewModel.joinFamilyByInviteCodeWithFeedback(
+                  code: code,
+                  successMessage: 'Te uniste a la familia correctamente.',
+                  fallbackErrorMessage: 'Could not join family.',
+                );
+                if (!joined) {
+                  return;
                 }
+                await _syncMembershipIndex();
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
+
+                if (!mounted) {
+                  return;
+                }
+
+                setState(() {});
               },
-              child: const Text('Invitar'),
+              child: Text(context.tr('Unirme')),
             ),
           ],
         );
@@ -110,21 +143,181 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     );
   }
 
-  Future<List<_MemberData>> _loadMembers(List<dynamic> memberUids, String ownerUid) async {
-    final docs = await Future.wait(
-      memberUids.map(
-        (uid) => _firestore.collection('users').doc(uid as String).get(),
+  Future<void> _showMemberActions({
+    required String familyId,
+    required _MemberData member,
+    required bool canManage,
+  }) async {
+    final currentUid = _auth.currentUser?.uid;
+    if (currentUid == null || member.uid == currentUid || !canManage || member.isOwner) {
+      return;
+    }
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'make_admin'),
+                    icon: const Icon(Icons.shield_outlined, color: _primary),
+                    label: Text(
+                      context.tr('Assign as administrator'),
+                      style: const TextStyle(
+                        color: _textMain,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, 'remove_member'),
+                    icon: const Icon(Icons.person_remove_outlined, color: Color(0xFFFF9A9A)),
+                    label: Text(
+                      context.tr('Remove from family'),
+                      style: const TextStyle(
+                        color: Color(0xFFFFB0B0),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (action == 'make_admin') {
+      final ok = await _viewModel.promoteMemberToAdminWithFeedback(
+        familyId: familyId,
+        memberUid: member.uid,
+        successMessage: 'Miembro promovido a administrador.',
+      );
+      if (ok && mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    if (action != 'remove_member') {
+      return;
+    }
+
+    final ok = await _viewModel.removeMemberFromFamilyWithFeedback(
+      familyId: familyId,
+      memberUid: member.uid,
+      successMessage: 'Miembro eliminado de la familia.',
+    );
+    if (ok && mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _leaveCurrentFamily({
+    required String familyId,
+    required bool isCurrentUserAdmin,
+    required bool hasAnotherAdmin,
+  }) async {
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceHigh,
+        title: Text(context.tr('Salir de la familia'), style: const TextStyle(color: _textMain)),
+        content: Text(
+          isCurrentUserAdmin && !hasAnotherAdmin
+              ? context.tr('You are the only administrator. Assign another administrator before leaving.')
+              : context.tr('Are you sure you want to leave this family?'),
+          style: const TextStyle(color: _textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.tr('Leave')),
+          ),
+        ],
       ),
     );
 
+    if (shouldLeave != true) return;
+
+    if (isCurrentUserAdmin && !hasAnotherAdmin) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('Debes asignar otro administrador antes de salir.'))),
+      );
+      return;
+    }
+
+    final ok = await _viewModel.leaveFamilyWithFeedback(
+      familyId: familyId,
+      successMessage: 'Saliste de la familia.',
+    );
+    if (!ok) {
+      return;
+    }
+    await _syncMembershipIndex();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<List<_MemberData>> _loadMembers(
+    List<dynamic> memberUids,
+    String ownerUid,
+    List<dynamic> adminUids,
+  ) async {
+    final adminSet = adminUids.map((e) => e.toString()).toSet();
+
+    final docs = await _viewModel.loadMemberProfiles(memberUids);
+
     return docs.map((doc) {
-      final data = doc.data() ?? <String, dynamic>{};
+      final data = doc['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       final username = (data['username'] as String?)?.trim();
+      final avatarId = (data['profile_avatar_id'] as String?)?.trim();
+      final uid = (doc['uid'] as String?) ?? '';
+      final isOwner = uid == ownerUid;
+      final isAdmin = isOwner || adminSet.contains(uid);
       return _MemberData(
-        uid: doc.id,
-        name: (username != null && username.isNotEmpty) ? username : 'Member',
-        subtitle: doc.id == ownerUid ? 'Primary Caretaker' : 'Family Member',
-        isAdmin: doc.id == ownerUid,
+        uid: uid,
+        name: (username != null && username.isNotEmpty) ? username : context.tr('Member'),
+        subtitle: isOwner
+          ? context.tr('Owner')
+            : isAdmin
+            ? context.tr('Admin')
+            : context.tr('Member'),
+        isOwner: isOwner,
+        isAdmin: isAdmin,
+        avatarId: resolveUserAvatar(avatarId).id,
       );
     }).toList();
   }
@@ -137,10 +330,210 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
     return '$left-$right';
   }
 
+  bool _isFeedingEvent(Map<String, dynamic> data) {
+    final title = ((data['title'] as String?) ?? '').toLowerCase();
+    final category = ((data['category'] as String?) ?? '').toLowerCase();
+    final lookup = '$title $category';
+
+    return lookup.contains('feed') ||
+        lookup.contains('food') ||
+        lookup.contains('meal') ||
+        lookup.contains('comida') ||
+        lookup.contains('aliment');
+  }
+
+  String _formatShortTime(DateTime dateTime) {
+    final hour = dateTime.hour;
+    final minute = dateTime.minute;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final normalizedHour = hour % 12 == 0 ? 12 : hour % 12;
+    final paddedMinute = minute.toString().padLeft(2, '0');
+    return '$normalizedHour:$paddedMinute $suffix';
+  }
+
+  Widget _buildPetHealthPulse({
+    required String familyId,
+  }) {
+    final currentUid = _auth.currentUser?.uid;
+
+    if (currentUid == null) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('users').doc(currentUid).snapshots(),
+      builder: (context, userSnapshot) {
+        final userData = userSnapshot.data?.data() ?? const <String, dynamic>{};
+        final activeFamilyId = ((userData['active_family_id'] as String?) ?? '').trim();
+        final activePetId = ((userData['active_pet_id'] as String?) ?? '').trim();
+        final selectedPetId = activeFamilyId == familyId ? activePetId : '';
+
+        return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: _firestore
+              .collection('families')
+              .doc(familyId)
+              .collection('pets')
+              .orderBy('created_at', descending: true)
+              .snapshots()
+              .map((snapshot) => snapshot.docs),
+          builder: (context, petsSnapshot) {
+            final pets = petsSnapshot.data ?? const [];
+
+            String petName = context.tr('your pet');
+            String petIdForLookup = selectedPetId;
+
+            if (pets.isNotEmpty) {
+              QueryDocumentSnapshot<Map<String, dynamic>> petDoc = pets.first;
+              if (selectedPetId.isNotEmpty) {
+                try {
+                  petDoc = pets.firstWhere((doc) => doc.id == selectedPetId);
+                } catch (_) {
+                  petDoc = pets.first;
+                }
+              }
+
+              final petData = petDoc.data();
+              final resolvedName = (petData['name'] as String?)?.trim();
+                petName = (resolvedName != null && resolvedName.isNotEmpty)
+                  ? resolvedName
+                  : context.tr('your pet');
+              petIdForLookup = petDoc.id;
+            }
+
+            if (petIdForLookup.isEmpty) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F3A35),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
+                        SizedBox(width: 8),
+                        Text(
+                          'PET HEALTH PULSE',
+                          style: TextStyle(
+                            color: Color(0xFF9FD6BD),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      context.tr('No active pet to show feeding history.'),
+                      style: const TextStyle(
+                        color: Color(0xFFC9E9D9),
+                        fontSize: 16,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+              stream: _viewModel.streamTodayEvents(
+                familyId: familyId,
+                petId: petIdForLookup,
+              ),
+              builder: (context, eventsSnapshot) {
+                final events = eventsSnapshot.data ?? const [];
+
+                QueryDocumentSnapshot<Map<String, dynamic>>? latestFeedingCompleted;
+                DateTime? latestCompletedAt;
+
+                for (final eventDoc in events) {
+                  final data = eventDoc.data();
+                  if (data['completed'] != true || !_isFeedingEvent(data)) {
+                    continue;
+                  }
+
+                  final completedAt = data['completed_at'];
+                  if (completedAt is! Timestamp) {
+                    continue;
+                  }
+
+                  final completedDate = completedAt.toDate();
+                  if (latestCompletedAt == null || completedDate.isAfter(latestCompletedAt)) {
+                    latestCompletedAt = completedDate;
+                    latestFeedingCompleted = eventDoc;
+                  }
+                }
+
+                String pulseMessage;
+                if (latestFeedingCompleted == null || latestCompletedAt == null) {
+                  pulseMessage = '${context.tr('No feeding events completed today for')} $petName.';
+                } else {
+                  final feedingData = latestFeedingCompleted.data();
+                  final completedBy = ((feedingData['completed_by_username'] as String?) ?? '').trim();
+                  final completedByLabel = completedBy.isNotEmpty
+                      ? completedBy
+                      : context.tr('someone in the family');
+                  final timeLabel = _formatShortTime(latestCompletedAt);
+                  pulseMessage =
+                      '$petName ${context.tr('was last fed by')} $completedByLabel ${context.tr('at')} $timeLabel.';
+                }
+
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1F3A35),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
+                          SizedBox(width: 8),
+                          Text(
+                            'PET HEALTH PULSE',
+                            style: TextStyle(
+                              color: Color(0xFF9FD6BD),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        pulseMessage,
+                        style: const TextStyle(
+                          color: Color(0xFFC9E9D9),
+                          fontSize: 16,
+                          height: 1.45,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: _familyService.streamFamiliesForCurrentUser(),
+      stream: _viewModel.streamFamiliesForCurrentUser(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -158,7 +551,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Text(
-                  'Error cargando familias:\n${snapshot.error}',
+                  '${context.tr('Error loading families')}:\n${snapshot.error}',
                   style: const TextStyle(color: _textMuted),
                 ),
               ),
@@ -173,6 +566,12 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
         final familyName = hasFamily ? (data['name'] as String?) ?? 'My Family' : 'My Family';
         final ownerUid = (data['owner_uid'] as String?) ?? '';
         final memberUids = (data['member_uids'] as List<dynamic>? ?? const []);
+        final adminUids =
+            (data['admin_uids'] as List<dynamic>? ?? <dynamic>[ownerUid]).toSet().toList();
+        final currentUid = _auth.currentUser?.uid ?? '';
+        final isCurrentUserAdmin = adminUids.contains(currentUid) || ownerUid == currentUid;
+        final hasAnotherAdmin =
+            adminUids.any((uid) => uid.toString() != currentUid) || ownerUid != currentUid;
         final inviteCode = hasFamily ? _buildInviteCode(familyName, family!.id) : '-- -- --';
 
         return Container(
@@ -229,7 +628,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                               ),
                             ),
                             const Icon(
-                              Icons.notifications_none,
+                              Icons.pets_rounded,
                               color: _textMuted,
                               size: 24,
                             ),
@@ -237,9 +636,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      const Text(
-                        'My Family',
-                        style: TextStyle(
+                      Text(
+                        context.tr('My Family'),
+                        style: const TextStyle(
                           color: _textMain,
                           fontSize: 40,
                           fontWeight: FontWeight.w700,
@@ -249,8 +648,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                       const SizedBox(height: 8),
                       Text(
                         hasFamily
-                            ? 'Manage everyone who helps take care of Fido.'
-                            : 'No hay familia disponible. Crea una para comenzar.',
+                          ? context.tr('Manage everyone who helps take care of your pet.')
+                          : context.tr('No family available. Create one to get started.'),
                         style: const TextStyle(
                           color: _textMuted,
                           fontSize: 16,
@@ -279,9 +678,9 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'SHARE INVITE CODE',
-                              style: TextStyle(
+                            Text(
+                              context.tr('SHARE INVITE CODE'),
+                              style: const TextStyle(
                                 color: Color(0xFFD8EAFF),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -311,6 +710,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                   FilledButton(
                                     onPressed: hasFamily
                                         ? () async {
+                                            final copiedMessage = context.tr('Invitation code copied.');
                                             final messenger = ScaffoldMessenger.of(context);
                                             await Clipboard.setData(
                                               ClipboardData(text: inviteCode),
@@ -319,9 +719,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                               return;
                                             }
                                             messenger.showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Código copiado'),
-                                              ),
+                                              SnackBar(content: Text(copiedMessage)),
                                             );
                                           }
                                         : () async {
@@ -331,7 +729,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                       backgroundColor: Colors.white,
                                       foregroundColor: const Color(0xFF0C53A1),
                                     ),
-                                    child: Text(hasFamily ? 'Copy' : 'Crear'),
+                                    child: Text(hasFamily ? context.tr('Copy') : context.tr('Create')),
                                   ),
                                 ],
                               ),
@@ -339,14 +737,35 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                             const SizedBox(height: 12),
                             Text(
                               hasFamily
-                                  ? 'Send this code to family members to sync your pet\'s schedule.'
-                                  : 'Crea una familia para habilitar invitaciones y sincronización.',
+                                  ? context.tr('Send this code to family members to sync your pet\'s schedule.')
+                                  : context.tr('Create a family to enable invites and sync.'),
                               style: const TextStyle(
                                 color: Color(0xFFE3F0FF),
                                 fontSize: 14,
                                 height: 1.45,
                               ),
                             ),
+                            if (!hasFamily) ...[
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _showJoinByCodeDialog,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.40),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  icon: const Icon(Icons.group_add_rounded),
+                                  label: Text(
+                                    context.tr('Join with code'),
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -354,27 +773,12 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         const SizedBox(height: 20),
                         Row(
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Active Members',
-                                style: TextStyle(
+                                context.tr('Active Members'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                _showInviteDialog(
-                                  familyId: family!.id,
-                                  familyName: familyName,
-                                );
-                              },
-                              child: const Text(
-                                '+ Invite Member',
-                                style: TextStyle(
-                                  color: _primary,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -383,7 +787,7 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                         ),
                         const SizedBox(height: 10),
                         FutureBuilder<List<_MemberData>>(
-                          future: _loadMembers(memberUids, ownerUid),
+                          future: _loadMembers(memberUids, ownerUid, adminUids),
                           builder: (context, membersSnapshot) {
                             if (membersSnapshot.connectionState == ConnectionState.waiting) {
                               return const Center(child: CircularProgressIndicator());
@@ -403,15 +807,13 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                     ),
                                     child: Row(
                                       children: [
-                                        CircleAvatar(
-                                          radius: 26,
-                                          backgroundColor: const Color(0xFF273247),
-                                          child: Text(
-                                            member.name.characters.first.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: _textMain,
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(13),
+                                          child: buildUserAvatarVisual(
+                                            avatarId: member.avatarId,
+                                            size: 52,
+                                            borderRadius: BorderRadius.circular(13),
+                                            emojiSize: 22,
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -421,8 +823,8 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                             children: [
                                               Text(
                                                 member.name +
-                                                    (member.uid == FirebaseAuth.instance.currentUser?.uid
-                                                        ? ' (You)'
+                                                    (member.uid == _auth.currentUser?.uid
+                                                        ? ' (${context.tr('You')})'
                                                         : ''),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -463,67 +865,23 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                                             ),
                                           )
                                         else
-                                          const Icon(
-                                            Icons.more_vert,
-                                            color: Color(0xFF7D889E),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                InkWell(
-                                  onTap: () {
-                                    _showInviteDialog(
-                                      familyId: family!.id,
-                                      familyName: familyName,
-                                    );
-                                  },
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-                                    decoration: BoxDecoration(
-                                      color: _surface,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: const Color(0xFFB9C3DA).withValues(alpha: 0.15),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor: Color(0xFF273247),
-                                          child: Icon(
-                                            Icons.person_add_alt_1,
-                                            color: Color(0xFFA3AAC4),
-                                          ),
-                                        ),
-                                        SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Invite More',
-                                                style: TextStyle(
-                                                  color: _textMain,
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                          InkWell(
+                                            onTap: () {
+                                              _showMemberActions(
+                                                familyId: family!.id,
+                                                member: member,
+                                                canManage: isCurrentUserAdmin,
+                                              );
+                                            },
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(4),
+                                              child: Icon(
+                                                Icons.more_vert,
+                                                color: Color(0xFF7D889E),
                                               ),
-                                              SizedBox(height: 2),
-                                              Text(
-                                                'Add up to 5 family members',
-                                                style: TextStyle(
-                                                  color: _textMuted,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ],
+                                            ),
                                           ),
-                                        ),
                                       ],
                                     ),
                                   ),
@@ -532,46 +890,33 @@ class _FamilyTabContentState extends State<FamilyTabContent> {
                             );
                           },
                         ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              _leaveCurrentFamily(
+                                familyId: family!.id,
+                                isCurrentUserAdmin: isCurrentUserAdmin,
+                                hasAnotherAdmin: hasAnotherAdmin,
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFFFA3A3),
+                              side: const BorderSide(color: Color(0xFFFF8E8E)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.exit_to_app_rounded),
+                            label: Text(
+                              context.tr('Leave family'),
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
                       ],
                       const SizedBox(height: 18),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1F3A35),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.circle, size: 10, color: Color(0xFF7FC8A8)),
-                                SizedBox(width: 8),
-                                Text(
-                                  'PET HEALTH PULSE',
-                                  style: TextStyle(
-                                    color: Color(0xFF9FD6BD),
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 12),
-                            Text(
-                              'Everyone is synchronized. Fido was last fed by Sarah at 8:00 AM.',
-                              style: TextStyle(
-                                color: Color(0xFFC9E9D9),
-                                fontSize: 16,
-                                height: 1.45,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      if (hasFamily && family != null)
+                        _buildPetHealthPulse(familyId: family.id),
                     ],
                   ),
                 ),
@@ -588,12 +933,16 @@ class _MemberData {
   final String uid;
   final String name;
   final String subtitle;
+  final bool isOwner;
   final bool isAdmin;
+  final String avatarId;
 
   const _MemberData({
     required this.uid,
     required this.name,
     required this.subtitle,
+    required this.isOwner,
     required this.isAdmin,
+    required this.avatarId,
   });
 }

@@ -1,7 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/auth_service.dart';
+import '../l10n/app_i18n.dart';
+import '../viewmodels/auth/login_view_model.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,13 +12,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final AuthService _auth = AuthService();
+  final LoginViewModel _viewModel = LoginViewModel();
   final _formKey = GlobalKey<FormState>();
   final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
-
-  bool _isLoading = false;
-  bool _obscurePassword = true;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF131E33);
@@ -28,7 +25,22 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color _primary = Color(0xFF74B1FF);
 
   @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
+
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -39,39 +51,19 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    final result = await _viewModel.login(
+      identifier: _identifierController.text,
+      password: _passwordController.text,
+    );
 
-    try {
-      final user = await _auth.login(
-        _identifierController.text.trim(),
-        _passwordController.text,
-      );
+    if (!mounted) {
+      return;
+    }
 
-      if (!mounted) {
-        return;
-      }
-
-      if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo iniciar sesión')),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+    if (!result.success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_auth.getReadableAuthError(e))),
+        SnackBar(content: Text(context.tr(result.message ?? 'Could not sign in.'))),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
@@ -107,8 +99,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Recuperar contraseña',
+                    Text(
+                      context.tr('Recover password'),
                       style: TextStyle(
                         color: _title,
                         fontSize: 24,
@@ -117,8 +109,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'Ingresa tu usuario o correo para enviarte el enlace de recuperación.',
+                    Text(
+                      context.tr('Enter your username or email to send the recovery link.'),
                       style: TextStyle(
                         color: _muted,
                         fontSize: 14,
@@ -135,9 +127,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontSize: 15,
                       ),
                       decoration: InputDecoration(
-                        labelText: 'Usuario o correo',
+                        labelText: context.tr('Username or email'),
                         labelStyle: const TextStyle(color: Color(0xFFA3AAC4)),
-                        hintText: 'ejemplo@correo.com o usuario123',
+                        hintText: context.tr('example@mail.com or username123'),
                         hintStyle: const TextStyle(color: Color(0xFF717D92)),
                         prefixIcon: const Icon(
                           Icons.alternate_email_rounded,
@@ -180,8 +172,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               foregroundColor: _muted,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text(
-                              'Cancelar',
+                            child: Text(
+                              context.tr('Cancel'),
                               style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -204,9 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       final value = recoveryValue.trim();
                                       if (value.isEmpty) {
                                         messenger.showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Ingresa usuario o correo'),
-                                          ),
+                                          SnackBar(content: Text(context.tr('Enter username or email'))),
                                         );
                                         return;
                                       }
@@ -215,41 +205,47 @@ class _LoginScreenState extends State<LoginScreen> {
                                         isSending = true;
                                       });
 
-                                      try {
-                                        await _auth.sendPasswordReset(value);
+                                      final resetSentText = context.tr(
+                                        'We sent you an email to recover your password',
+                                      );
+                                      final fallbackErrorText =
+                                          context.tr('Could not sign in.');
 
-                                        if (!mounted) {
-                                          return;
-                                        }
+                                      final result = await _viewModel.sendPasswordReset(value);
 
-                                        if (dialogContext.mounted) {
-                                          FocusManager.instance.primaryFocus?.unfocus();
-                                          Navigator.of(dialogContext).pop();
-                                        }
+                                      if (!mounted) {
+                                        return;
+                                      }
 
-                                        messenger.showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Te enviamos un correo para recuperar la contraseña',
-                                            ),
-                                          ),
-                                        );
-                                      } on FirebaseAuthException catch (e) {
-                                        if (!mounted) {
-                                          return;
-                                        }
-
+                                      if (!result.success) {
                                         messenger.showSnackBar(
                                           SnackBar(
-                                            content: Text(_auth.getReadableAuthError(e)),
+                                            content: Text(result.message ?? fallbackErrorText),
                                           ),
                                         );
-                                      } finally {
                                         if (dialogContext.mounted) {
                                           setDialogState(() {
                                             isSending = false;
                                           });
                                         }
+                                        return;
+                                      }
+
+                                      if (dialogContext.mounted) {
+                                        FocusManager.instance.primaryFocus?.unfocus();
+                                        Navigator.of(dialogContext).pop();
+                                      }
+
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(resetSentText),
+                                        ),
+                                      );
+
+                                      if (dialogContext.mounted) {
+                                        setDialogState(() {
+                                          isSending = false;
+                                        });
                                       }
                                     },
                               style: ElevatedButton.styleFrom(
@@ -275,7 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Color(0xFF0E2C52),
                                       ),
                                     )
-                                  : const Text('Enviar'),
+                                  : Text(context.tr('Enviar')),
                             ),
                           ),
                         ),
@@ -401,9 +397,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Text(
-                              'Login',
-                              style: TextStyle(
+                            Text(
+                              context.tr('Login'),
+                              style: const TextStyle(
                                 color: _title,
                                 fontSize: 42,
                                 fontWeight: FontWeight.w700,
@@ -437,7 +433,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: 16,
                               ),
                               decoration: InputDecoration(
-                                hintText: 'hello@family.com',
+                                hintText: context.tr('hello@family.com'),
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF717D92),
                                   fontWeight: FontWeight.w500,
@@ -470,7 +466,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'Ingresa tu usuario o correo';
+                                  return context.tr('Enter your username or email');
                                 }
 
                                 return null;
@@ -480,8 +476,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
-                                  'Password',
+                                Text(
+                                  context.tr('Password'),
                                   style: TextStyle(
                                     color: Color(0xFFBAC1D4),
                                     fontSize: 14,
@@ -497,8 +493,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     tapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  child: const Text(
-                                    'Forgot?',
+                                  child: Text(
+                                    context.tr('Forgot?'),
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
@@ -510,13 +506,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _passwordController,
-                              obscureText: _obscurePassword,
+                              obscureText: _viewModel.obscurePassword,
                               style: const TextStyle(
                                 color: Color(0xFFD8DFF2),
                                 fontSize: 16,
                               ),
                               decoration: InputDecoration(
-                                hintText: '........',
+                                hintText: context.tr('........'),
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF717D92),
                                   fontWeight: FontWeight.w500,
@@ -527,13 +523,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: Color(0xFF8791A3),
                                 ),
                                 suffixIcon: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
+                                  onPressed: _viewModel.togglePasswordVisibility,
                                   icon: Icon(
-                                    _obscurePassword
+                                    _viewModel.obscurePassword
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined,
                                     color: const Color(0xFF94A0B7),
@@ -590,7 +582,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                               child: ElevatedButton(
-                                onPressed: _isLoading ? null : _login,
+                                onPressed: _viewModel.isLoading ? null : _login,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -604,7 +596,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     fontSize: 16,
                                   ),
                                 ),
-                                child: _isLoading
+                                child: _viewModel.isLoading
                                     ? const SizedBox(
                                         width: 22,
                                         height: 22,
@@ -613,7 +605,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           color: Color(0xFF0E2C52),
                                         ),
                                       )
-                                    : const Text('Login'),
+                                    : Text(context.tr('Login')),
                               ),
                             ),
                             const SizedBox(height: 26),

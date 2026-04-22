@@ -14,23 +14,26 @@ class PetService {
         .map((snapshot) => snapshot.docs);
   }
 
-  Future<void> addPet({
+  Future<String> addPet({
     required String familyId,
     required String name,
     required String breed,
     required int age,
     required String notes,
     String? photoUrl,
+    String? avatarId,
   }) async {
-    await _petsCollection(familyId).add({
+    final doc = await _petsCollection(familyId).add({
       'name': name.trim(),
       'breed': breed.trim(),
       'age': age,
       'notes': notes.trim(),
       'photo_url': (photoUrl ?? '').trim(),
+      'avatar_id': (avatarId ?? '').trim(),
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     });
+    return doc.id;
   }
 
   Future<void> updatePet({
@@ -41,6 +44,7 @@ class PetService {
     required int age,
     required String notes,
     String? photoUrl,
+    String? avatarId,
   }) async {
     await _petsCollection(familyId).doc(petId).update({
       'name': name.trim(),
@@ -48,6 +52,7 @@ class PetService {
       'age': age,
       'notes': notes.trim(),
       'photo_url': (photoUrl ?? '').trim(),
+      'avatar_id': (avatarId ?? '').trim(),
       'updated_at': FieldValue.serverTimestamp(),
     });
   }

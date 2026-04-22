@@ -1,7 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/family_service.dart';
+import '../l10n/app_i18n.dart';
+import '../viewmodels/screens/create_family_view_model.dart';
 import 'add_new_pet_screen.dart';
 
 class CreateFamilyScreen extends StatefulWidget {
@@ -12,7 +12,7 @@ class CreateFamilyScreen extends StatefulWidget {
 }
 
 class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
-  final FamilyService _familyService = FamilyService();
+  final CreateFamilyViewModel _viewModel = CreateFamilyViewModel();
   final TextEditingController _familyNameController = TextEditingController();
 
   static const Color _bg = Color(0xFF060E20);
@@ -22,10 +22,30 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
-  bool _isSaving = false;
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+  }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
     _familyNameController.dispose();
     super.dispose();
   }
@@ -34,83 +54,66 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
     final familyName = _familyNameController.text.trim();
     if (familyName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Escribe un nombre para la familia')),
+        SnackBar(content: Text(context.tr('Please enter a family name.'))),
       );
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    final familyId = await _viewModel.createFamilyWithState(
+      familyName: familyName,
+      errorMessage: 'Could not create family.',
+    );
 
-    try {
-      final familyId = await _familyService.createFamily(familyName);
-
-      if (!mounted) {
-        return;
-      }
-
-      final addPetNow = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return AlertDialog(
-            backgroundColor: _surfaceHigh,
-            title: const Text(
-              'Familia creada',
-              style: TextStyle(color: _textMain, fontWeight: FontWeight.w700),
-            ),
-            content: const Text(
-              '¿Quieres agregar una mascota ahora?',
-              style: TextStyle(color: _textMuted),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('No'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  foregroundColor: const Color(0xFF0A2550),
-                ),
-                child: const Text('Si'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      if (addPetNow == true) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => AddNewPetScreen(familyId: familyId),
-          ),
-        );
-        return;
-      }
-
-      Navigator.of(context).pop(true);
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_familyService.getReadableError(e))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+    if (!mounted || familyId == null) {
+      return;
     }
+
+    final addPetNow = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: _surfaceHigh,
+          title: Text(
+            context.tr('Family created'),
+            style: const TextStyle(color: _textMain, fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            context.tr('Do you want to add a pet now?'),
+            style: const TextStyle(color: _textMuted),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(context.tr('No')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: const Color(0xFF0A2550),
+              ),
+              child: Text(context.tr('Yes')),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (addPetNow == true) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => AddNewPetScreen(familyId: familyId),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -148,10 +151,10 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                         icon: const Icon(Icons.arrow_back, color: _primary, size: 30),
                       ),
                       const SizedBox(width: 4),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Create Family',
-                          style: TextStyle(
+                          context.tr('Create Family'),
+                          style: const TextStyle(
                             color: Color(0xFF9DC7FF),
                             fontSize: 32,
                             height: 1,
@@ -180,9 +183,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Start Your Family Circle',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Start Your Family Circle'),
+                          style: const TextStyle(
                             color: _textMain,
                             fontSize: 40,
                             height: 1.08,
@@ -191,9 +194,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        const Text(
-                          'Create a group to share Stitch\'s care schedule with everyone.',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Create a group to share Stitch\'s care schedule with everyone.'),
+                          style: const TextStyle(
                             color: _textMuted,
                             fontSize: 18,
                             height: 1.45,
@@ -217,70 +220,10 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Center(
-                                child: SizedBox(
-                                  width: 214,
-                                  height: 214,
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Container(
-                                        width: 200,
-                                        height: 200,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: const Color(0xFF42506C),
-                                            width: 5,
-                                            strokeAlign: BorderSide.strokeAlignOutside,
-                                          ),
-                                        ),
-                                      ),
-                                      Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: const [
-                                          Icon(Icons.photo_camera_outlined,
-                                              color: Color(0xFF95A2BC), size: 52),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            'UPLOAD',
-                                            style: TextStyle(
-                                              color: Color(0xFF95A2BC),
-                                              fontSize: 30,
-                                              letterSpacing: 2,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Positioned(
-                                        right: 18,
-                                        bottom: 26,
-                                        child: Container(
-                                          width: 60,
-                                          height: 60,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: const Color(0xFF2D66D8),
-                                            boxShadow: const [
-                                              BoxShadow(
-                                                color: Color.fromRGBO(45, 102, 216, 0.35),
-                                                blurRadius: 16,
-                                                offset: Offset(0, 8),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Icon(Icons.add, color: Colors.white, size: 36),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 22),
-                              const Text(
-                                'FAMILY NAME',
-                                style: TextStyle(
+                              const SizedBox(height: 8),
+                              Text(
+                                context.tr('FAMILY NAME'),
+                                style: const TextStyle(
                                   color: Color(0xFFAFBED9),
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -296,8 +239,8 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                 child: TextField(
                                   controller: _familyNameController,
                                   style: const TextStyle(color: _textMain, fontSize: 18),
-                                  decoration: const InputDecoration(
-                                    hintText: 'e.g., The Rodriguez Family',
+                                  decoration: InputDecoration(
+                                    hintText: context.tr('e.g., The Rodriguez Family'),
                                     hintStyle: TextStyle(color: Color(0xFF60708E), fontSize: 18),
                                     border: InputBorder.none,
                                     contentPadding:
@@ -306,9 +249,9 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              const Text(
-                                'This is the name your family members will see when they join.',
-                                style: TextStyle(
+                              Text(
+                                context.tr('This is the name your family members will see when they join.'),
+                                style: const TextStyle(
                                   color: _textMuted,
                                   fontSize: 15,
                                   height: 1.45,
@@ -322,14 +265,14 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                   color: _surfaceHigh.withValues(alpha: 0.55),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   children: [
-                                    Icon(Icons.info, color: _primary),
-                                    SizedBox(width: 12),
+                                    const Icon(Icons.info, color: _primary),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
-                                        'Your family circle is encrypted and private to invited members only.',
-                                        style: TextStyle(
+                                        context.tr('Your family circle is encrypted and private to invited members only.'),
+                                        style: const TextStyle(
                                           color: _textMuted,
                                           fontSize: 14,
                                           height: 1.4,
@@ -357,7 +300,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                   ],
                                 ),
                                 child: ElevatedButton(
-                                  onPressed: _isSaving ? null : _createFamily,
+                                  onPressed: _viewModel.isLoading ? null : _createFamily,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
                                     foregroundColor: Colors.white,
@@ -374,7 +317,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                       letterSpacing: 0.2,
                                     ),
                                   ),
-                                  child: _isSaving
+                                  child: _viewModel.isLoading
                                       ? const SizedBox(
                                           width: 24,
                                           height: 24,
@@ -384,7 +327,7 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
                                                 AlwaysStoppedAnimation<Color>(Colors.white),
                                           ),
                                         )
-                                      : const Text('Create Family'),
+                                          : Text(context.tr('Create Family')),
                                 ),
                               ),
                             ],

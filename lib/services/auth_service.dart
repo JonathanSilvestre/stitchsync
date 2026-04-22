@@ -75,6 +75,7 @@ class AuthService {
 
       await result.user?.sendEmailVerification();
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
+      await _auth.signOut();
       return result.user;
     } on FirebaseAuthException {
       rethrow;
@@ -100,8 +101,28 @@ class AuthService {
         password: password,
       );
 
+      final user = result.user;
+      if (user == null) {
+        return null;
+      }
+
+      await user.reload();
+      final refreshedUser = _auth.currentUser;
+      if (refreshedUser == null) {
+        return null;
+      }
+
+      if (!refreshedUser.emailVerified) {
+        await _auth.signOut();
+        throw FirebaseAuthException(
+          code: 'email-not-verified',
+          message: 'Verifica tu correo antes de iniciar sesión.',
+        );
+      }
+
       await _familyService.acceptAllPendingInvitationsForCurrentUser();
-      return result.user;
+      await setPresence(isOnline: true);
+      return refreshedUser;
     } on FirebaseAuthException {
       rethrow;
     } catch (_) {
@@ -111,7 +132,22 @@ class AuthService {
 
   // Logout
   Future<void> logout() async {
+    await setPresence(isOnline: false);
     await _auth.signOut();
+  }
+
+  Future<void> setPresence({required bool isOnline}) async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    await _usersCollection.doc(user.uid).set({
+      'is_online': isOnline,
+      'last_seen_at': FieldValue.serverTimestamp(),
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> sendVerificationEmail() async {
@@ -141,7 +177,7 @@ class AuthService {
 
   Future<void> updateAccount({
     required String newUsername,
-    required String currentPassword,
+    String? currentPassword,
     String? newPassword,
   }) async {
     final user = _auth.currentUser;
@@ -157,15 +193,29 @@ class AuthService {
     final currentUserDoc = await _usersCollection.doc(user.uid).get();
     final currentUsername =
         (currentUserDoc.data()?['username_lower'] as String?) ?? '';
+    final usernameChanged = normalizedNewUsername != currentUsername;
+    final wantsPasswordChange = newPassword != null && newPassword.trim().isNotEmpty;
 
-    final credential = EmailAuthProvider.credential(
-      email: user.email!,
-      password: currentPassword,
-    );
+    if (!usernameChanged && !wantsPasswordChange) {
+      return;
+    }
 
-    await user.reauthenticateWithCredential(credential);
+    if (wantsPasswordChange) {
+      final providedPassword = (currentPassword ?? '').trim();
+      if (providedPassword.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'requires-recent-login',
+          message: 'Debes ingresar tu contraseña actual para cambiarla.',
+        );
+      }
 
-    if (newPassword != null && newPassword.trim().isNotEmpty) {
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: providedPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+
       await user.updatePassword(newPassword.trim());
     }
 
@@ -176,7 +226,7 @@ class AuthService {
         : _usernamesCollection.doc(currentUsername);
 
     await _firestore.runTransaction((tx) async {
-      if (normalizedNewUsername != currentUsername) {
+      if (usernameChanged) {
         final newUsernameSnap = await tx.get(newUsernameRef);
         if (newUsernameSnap.exists) {
           throw FirebaseAuthException(
@@ -197,11 +247,15 @@ class AuthService {
         }
       }
 
-      tx.set(userRef, {
-        'username': newUsername.trim(),
-        'username_lower': normalizedNewUsername,
-        'updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      tx.set(
+        userRef,
+        {
+          if (usernameChanged) 'username': newUsername.trim(),
+          if (usernameChanged) 'username_lower': normalizedNewUsername,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
     });
   }
 
@@ -336,6 +390,8 @@ class AuthService {
         return 'Vuelve a iniciar sesión y repite la operación.';
       case 'username-already-in-use':
         return 'Ese nombre de usuario ya está en uso.';
+      case 'email-not-verified':
+        return 'Debes verificar tu correo antes de iniciar sesión.';
       default:
         return error.message ?? 'Ocurrió un error de autenticación.';
     }

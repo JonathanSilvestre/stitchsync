@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_i18n.dart';
 import '../main.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -236,7 +237,7 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                               SizedBox(height: 30 * heightScale),
                               Text(
-                                'Syncing your pet\'s world...',
+                                context.tr('Syncing your pet\'s world...'),
                                 style: TextStyle(
                                   color: const Color(0xFF8E9AB2),
                                   fontSize: 22 * heightScale,

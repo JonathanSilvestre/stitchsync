@@ -1,21 +1,31 @@
 import 'package:flutter/material.dart';
 
-import '../services/pet_service.dart';
+import '../l10n/app_i18n.dart';
+import '../utils/pet_avatar_catalog.dart';
+import '../viewmodels/screens/add_new_pet_view_model.dart';
 import 'home_screen.dart';
 
 class AddNewPetScreen extends StatefulWidget {
   final String familyId;
+  final String? petId;
+  final Map<String, dynamic>? initialPetData;
 
-  const AddNewPetScreen({super.key, required this.familyId});
+  const AddNewPetScreen({
+    super.key,
+    required this.familyId,
+    this.petId,
+    this.initialPetData,
+  });
 
   @override
   State<AddNewPetScreen> createState() => _AddNewPetScreenState();
 }
 
 class _AddNewPetScreenState extends State<AddNewPetScreen> {
-  final PetService _petService = PetService();
+  final AddNewPetViewModel _viewModel = AddNewPetViewModel();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _breedController = TextEditingController();
+  final FocusNode _breedFocusNode = FocusNode();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -25,15 +35,207 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
   static const Color _textMuted = Color(0xFFA3AAC4);
   static const Color _primary = Color(0xFF74B1FF);
 
+  void _onViewModelChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    final message = _viewModel.uiMessage;
+    if (message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(message))),
+      );
+      _viewModel.clearUiMessage();
+    }
+
+    setState(() {});
+  }
+
+  static const List<String> _dogBreeds = [
+    'Affenpinscher',
+    'Akita',
+    'Alaskan Malamute',
+    'American Bulldog',
+    'American Pit Bull Terrier',
+    'Australian Cattle Dog',
+    'Australian Shepherd',
+    'Basenji',
+    'Basset Hound',
+    'Beagle',
+    'Bernese Mountain Dog',
+    'Bichon Frise',
+    'Bloodhound',
+    'Border Collie',
+    'Boston Terrier',
+    'Boxer',
+    'Brittany',
+    'Bull Terrier',
+    'Bulldog',
+    'Cane Corso',
+    'Cavalier King Charles Spaniel',
+    'Chihuahua',
+    'Chow Chow',
+    'Cocker Spaniel',
+    'Collie',
+    'Dachshund',
+    'Dalmatian',
+    'Doberman Pinscher',
+    'English Setter',
+    'French Bulldog',
+    'German Shepherd',
+    'German Shorthaired Pointer',
+    'Golden Retriever',
+    'Great Dane',
+    'Greyhound',
+    'Havanese',
+    'Irish Setter',
+    'Jack Russell Terrier',
+    'Labrador Retriever',
+    'Lhasa Apso',
+    'Maltese',
+    'Miniature Pinscher',
+    'Miniature Schnauzer',
+    'Newfoundland',
+    'Papillon',
+    'Pekingese',
+    'Pembroke Welsh Corgi',
+    'Pomeranian',
+    'Poodle',
+    'Pug',
+    'Rottweiler',
+    'Saint Bernard',
+    'Samoyed',
+    'Scottish Terrier',
+    'Shetland Sheepdog',
+    'Shiba Inu',
+    'Shih Tzu',
+    'Siberian Husky',
+    'Staffordshire Bull Terrier',
+    'Weimaraner',
+    'West Highland White Terrier',
+    'Whippet',
+    'Yorkshire Terrier',
+    'Mixed Breed',
+  ];
+
   bool _isMale = true;
   bool _isKg = true;
-  bool _isSaving = false;
   DateTime? _birthDate;
+  String _selectedAvatarId = kPetAvatarChoices.first.id;
+
+  bool get _isEditMode => widget.petId != null && widget.petId!.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel.addListener(_onViewModelChanged);
+    _hydrateFromInitialPetData();
+    _breedController.addListener(_onBreedChanged);
+  }
+
+  void _onBreedChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  List<String> _matchingBreeds(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) {
+      return const <String>[];
+    }
+
+    final startsWith = _dogBreeds
+        .where((breed) => breed.toLowerCase().startsWith(q))
+        .toList(growable: false);
+    final contains = _dogBreeds
+        .where((breed) => !breed.toLowerCase().startsWith(q))
+        .where((breed) => breed.toLowerCase().contains(q))
+        .toList(growable: false);
+
+    return [...startsWith, ...contains].take(6).toList(growable: false);
+  }
+
+  void _hydrateFromInitialPetData() {
+    final data = widget.initialPetData;
+    if (data == null) {
+      return;
+    }
+
+    _nameController.text = (data['name'] as String?) ?? '';
+    _breedController.text = (data['breed'] as String?) ?? '';
+
+    final avatarId = (data['avatar_id'] as String?)?.trim() ?? '';
+    if (avatarId.isNotEmpty) {
+      _selectedAvatarId = avatarId;
+    }
+
+    final notesRaw = ((data['notes'] as String?) ?? '').trim();
+    if (notesRaw.isEmpty) {
+      return;
+    }
+
+    final pieces = notesRaw
+        .split('|')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    for (final piece in pieces) {
+      final lower = piece.toLowerCase();
+
+      if (lower.startsWith('weight:')) {
+        final raw = piece.substring(piece.indexOf(':') + 1).trim();
+        final weightMatch = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(raw);
+        if (weightMatch != null) {
+          _weightController.text = weightMatch.group(1)!;
+        }
+        _isKg = !raw.toLowerCase().contains('lb');
+        continue;
+      }
+
+      if (lower.startsWith('gender:')) {
+        final value = piece.substring(piece.indexOf(':') + 1).trim().toLowerCase();
+        _isMale = value != 'female';
+        continue;
+      }
+
+      if (lower.startsWith('dob:')) {
+        final value = piece.substring(piece.indexOf(':') + 1).trim();
+        final match = RegExp(r'^(\d{1,2})\/(\d{1,2})\/(\d{4})$').firstMatch(value);
+        if (match != null) {
+          final first = int.tryParse(match.group(1)!);
+          final second = int.tryParse(match.group(2)!);
+          final year = int.tryParse(match.group(3)!);
+          if (first != null && second != null && year != null) {
+            // Accept both legacy mm/dd/yyyy and new dd/mm/yyyy.
+            final day = first > 12 ? first : second;
+            final month = first > 12 ? second : first;
+            _birthDate = DateTime(year, month, day);
+          }
+        }
+        continue;
+      }
+
+      if (lower.startsWith('notes:')) {
+        _notesController.text = piece.substring(piece.indexOf(':') + 1).trim();
+      }
+    }
+
+    if (_notesController.text.isEmpty && !notesRaw.contains('|')) {
+      _notesController.text = notesRaw;
+    }
+  }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
+    _viewModel.dispose();
+    _breedController.removeListener(_onBreedChanged);
     _nameController.dispose();
     _breedController.dispose();
+    _breedFocusNode.dispose();
     _weightController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -73,6 +275,101 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
     return age;
   }
 
+  Future<void> _openAvatarPicker() async {
+    if (_viewModel.isLoading) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: _surfaceHigh,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _textMuted.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                Text(
+                  context.tr('Choose Avatar'),
+                  style: const TextStyle(
+                    color: _textMain,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: kPetAvatarChoices.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final avatar = kPetAvatarChoices[index];
+                    final selectedAvatar = avatar.id == _selectedAvatarId;
+
+                    return InkWell(
+                      onTap: () => Navigator.pop(sheetContext, avatar.id),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: selectedAvatar ? _primary : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: Center(
+                          child: buildPetAvatarVisual(
+                            photoUrl: null,
+                            avatarId: avatar.id,
+                            size: 56,
+                            borderRadius: BorderRadius.circular(14),
+                            iconSize: 30,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedAvatarId = selected;
+    });
+  }
+
   String _composeNotes() {
     final pieces = <String>[];
     final weight = _weightController.text.trim();
@@ -83,10 +380,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
     pieces.add('Gender: ${_isMale ? 'Male' : 'Female'}');
 
     if (_birthDate != null) {
-      final mm = _birthDate!.month.toString().padLeft(2, '0');
       final dd = _birthDate!.day.toString().padLeft(2, '0');
+      final mm = _birthDate!.month.toString().padLeft(2, '0');
       final yy = _birthDate!.year.toString();
-      pieces.add('DOB: $mm/$dd/$yy');
+      pieces.add('DOB: $dd/$mm/$yy');
     }
 
     final bio = _notesController.text.trim();
@@ -103,44 +400,39 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
     if (name.isEmpty || breed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa nombre y raza de la mascota')),
+        SnackBar(content: Text(context.tr('Please enter pet name and breed.'))),
       );
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    final savedPetId = await _viewModel.savePetWithState(
+      familyId: widget.familyId,
+      petId: widget.petId,
+      name: name,
+      breed: breed,
+      age: _resolveAgeFromBirthDate(),
+      notes: _composeNotes(),
+      avatarId: _selectedAvatarId,
+      birthDate: _birthDate,
+      successMessage: _isEditMode
+          ? 'Pet updated successfully.'
+          : 'Pet added successfully.',
+      errorMessage: 'Could not save pet. Please try again.',
+    );
 
-    try {
-      await _petService.addPet(
-        familyId: widget.familyId,
-        name: name,
-        breed: breed,
-        age: _resolveAgeFromBirthDate(),
-        notes: _composeNotes(),
-      );
+    if (!mounted || savedPetId == null) {
+      return;
+    }
 
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mascota agregada correctamente')),
-      );
-
+    if (_isEditMode) {
+      Navigator.of(context).pop();
+    } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => const HomeScreen(initialTab: 2),
         ),
         (route) => false,
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
     }
   }
 
@@ -153,13 +445,13 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
 
   String _birthDateLabel() {
     if (_birthDate == null) {
-      return 'mm/dd/yyyy';
+      return 'dd/mm/yyyy';
     }
 
-    final mm = _birthDate!.month.toString().padLeft(2, '0');
     final dd = _birthDate!.day.toString().padLeft(2, '0');
+    final mm = _birthDate!.month.toString().padLeft(2, '0');
     final yy = _birthDate!.year.toString();
-    return '$mm/$dd/$yy';
+    return '$dd/$mm/$yy';
   }
 
   @override
@@ -197,10 +489,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         icon: const Icon(Icons.arrow_back, color: _textMuted),
                       ),
                       const SizedBox(width: 4),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'AddNewPet',
-                          style: TextStyle(
+                          _isEditMode ? context.tr('Edit Pet') : context.tr('Add New Pet'),
+                          style: const TextStyle(
                             color: Color(0xFF9DC7FF),
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -228,80 +520,132 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                     child: Column(
                       children: [
                         Center(
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                width: 180,
-                                height: 180,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(30),
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [Color(0xFF2D3A52), Color(0xFF192540)],
-                                  ),
-                                ),
-                                child: const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_a_photo_outlined,
-                                      color: Color(0xFFAFBED9),
-                                      size: 44,
-                                    ),
-                                    SizedBox(height: 6),
-                                    Text(
-                                      'UPLOAD PHOTO',
-                                      style: TextStyle(
-                                        color: Color(0xFFAFBED9),
-                                        fontSize: 18,
-                                        letterSpacing: 1.2,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Positioned(
-                                right: -8,
-                                bottom: -8,
-                                child: Container(
-                                  width: 62,
-                                  height: 62,
+                          child: InkWell(
+                            onTap: _openAvatarPicker,
+                            borderRadius: BorderRadius.circular(30),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 180,
+                                  height: 180,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF2D66D8),
-                                    borderRadius: BorderRadius.circular(18),
+                                    borderRadius: BorderRadius.circular(30),
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [Color(0xFF2D3A52), Color(0xFF192540)],
+                                    ),
                                   ),
-                                  child: const Icon(Icons.edit, color: Colors.white),
+                                  child: Center(
+                                    child: buildPetAvatarVisual(
+                                      photoUrl: null,
+                                      avatarId: _selectedAvatarId,
+                                      size: 120,
+                                      borderRadius: BorderRadius.circular(26),
+                                      iconSize: 64,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Positioned(
+                                  right: -8,
+                                  bottom: -8,
+                                  child: Container(
+                                    width: 62,
+                                    height: 62,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2D66D8),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: const Icon(Icons.edit, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${context.tr('Avatar')}: ${resolvePetAvatar(_selectedAvatarId).label}',
+                          style: const TextStyle(
+                            color: _textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 18),
                         _FieldCard(
-                          label: 'PET NAME',
+                          label: context.tr('PET NAME'),
                           child: TextField(
                             controller: _nameController,
                             style: const TextStyle(color: _textMain, fontSize: 18),
-                            decoration: const InputDecoration(
-                              hintText: 'e.g. Luna',
+                            decoration: InputDecoration(
+                              hintText: context.tr('e.g. Luna'),
                               hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
                             ),
                           ),
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'BREED',
-                          child: TextField(
-                            controller: _breedController,
-                            style: const TextStyle(color: _textMain, fontSize: 18),
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search, color: _primary),
-                              hintText: 'Search breed...',
-                              hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
-                            ),
+                          label: context.tr('BREED'),
+                          child: Column(
+                            children: [
+                              TextField(
+                                controller: _breedController,
+                                focusNode: _breedFocusNode,
+                                style: const TextStyle(color: _textMain, fontSize: 18),
+                                decoration: InputDecoration(
+                                  prefixIcon: const Icon(Icons.search, color: _primary),
+                                  hintText: context.tr('Search breed...'),
+                                  hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 18),
+                                ),
+                              ),
+                              if (_breedFocusNode.hasFocus &&
+                                  _matchingBreeds(_breedController.text).isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  constraints: const BoxConstraints(maxHeight: 190),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF09142A),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: _primary.withValues(alpha: 0.25),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    shrinkWrap: true,
+                                    itemCount: _matchingBreeds(_breedController.text).length,
+                                    separatorBuilder: (context, index) => Divider(
+                                      height: 1,
+                                      color: _primary.withValues(alpha: 0.10),
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final suggestion = _matchingBreeds(_breedController.text)[index];
+                                      return ListTile(
+                                        dense: true,
+                                        title: Text(
+                                          suggestion,
+                                          style: const TextStyle(
+                                            color: _textMain,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          _breedController.text = suggestion;
+                                          _breedController.selection = TextSelection.fromPosition(
+                                            TextPosition(offset: suggestion.length),
+                                          );
+                                          _breedFocusNode.unfocus();
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -325,7 +669,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        'Male',
+                                        context.tr('Male'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: _isMale ? Colors.white : _textMuted,
@@ -347,7 +691,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        'Female',
+                                        context.tr('Female'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: !_isMale ? Colors.white : _textMuted,
@@ -364,7 +708,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'DATE OF BIRTH',
+                          label: context.tr('DATE OF BIRTH'),
                           child: InkWell(
                             onTap: _pickBirthDate,
                             borderRadius: BorderRadius.circular(14),
@@ -388,7 +732,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'WEIGHT',
+                          label: context.tr('WEIGHT'),
                           trailing: Container(
                             padding: const EdgeInsets.all(3),
                             decoration: BoxDecoration(
@@ -424,14 +768,14 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                         ),
                         const SizedBox(height: 12),
                         _FieldCard(
-                          label: 'BIO & MEDICAL NOTES',
+                          label: context.tr('BIO & MEDICAL NOTES'),
                           child: TextField(
                             controller: _notesController,
                             minLines: 4,
                             maxLines: 5,
                             style: const TextStyle(color: _textMain, fontSize: 17),
-                            decoration: const InputDecoration(
-                              hintText: 'Tell us about your pet\'s favorites, allergies, or habits...',
+                            decoration: InputDecoration(
+                              hintText: context.tr('Tell us about your pet\'s favorites, allergies, or habits...'),
                               hintStyle: TextStyle(color: Color(0xFF4D5F82), fontSize: 17),
                             ),
                           ),
@@ -454,7 +798,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                             ],
                           ),
                           child: ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _savePet,
+                            onPressed: _viewModel.isLoading ? null : _savePet,
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size.fromHeight(66),
                               backgroundColor: Colors.transparent,
@@ -463,7 +807,7 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                               shadowColor: Colors.transparent,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                             ),
-                            icon: _isSaving
+                            icon: _viewModel.isLoading
                                 ? const SizedBox(
                                     width: 18,
                                     height: 18,
@@ -474,7 +818,9 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                                   )
                                 : const Icon(Icons.pets),
                             label: Text(
-                              _isSaving ? 'Saving...' : 'Add Pet',
+                              _viewModel.isLoading
+                                  ? context.tr('Saving...')
+                                  : (_isEditMode ? context.tr('Update Pet') : context.tr('Add Pet')),
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,
@@ -484,10 +830,10 @@ class _AddNewPetScreenState extends State<AddNewPetScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'By adding a pet, you can start sharing care schedules with your family members.',
+                        Text(
+                          context.tr('By adding a pet, you can start sharing care schedules with your family members.'),
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: _textMuted, fontSize: 14, height: 1.45),
+                          style: const TextStyle(color: _textMuted, fontSize: 14, height: 1.45),
                         ),
                         const SizedBox(height: 14),
                       ],
@@ -619,25 +965,25 @@ class _BottomTabs extends StatelessWidget {
         children: [
           _NavTab(
             icon: Icons.home_filled,
-            label: 'Home',
+            label: context.tr('HOME'),
             selected: selectedIndex == 0,
             onTap: () => onTap(0),
           ),
           _NavTab(
             icon: Icons.calendar_today,
-            label: 'Calendar',
+            label: context.tr('CALENDAR'),
             selected: selectedIndex == 1,
             onTap: () => onTap(1),
           ),
           _NavTab(
             icon: Icons.groups,
-            label: 'Family',
+            label: context.tr('FAMILY'),
             selected: selectedIndex == 2,
             onTap: () => onTap(2),
           ),
           _NavTab(
             icon: Icons.person,
-            label: 'Profile',
+            label: context.tr('PROFILE'),
             selected: selectedIndex == 3,
             onTap: () => onTap(3),
           ),
@@ -681,7 +1027,7 @@ class _NavTab extends StatelessWidget {
               Icon(icon, color: fg, size: 20),
               const SizedBox(height: 4),
               Text(
-                label,
+                context.tr(label),
                 style: TextStyle(
                   color: fg,
                   fontSize: 11,

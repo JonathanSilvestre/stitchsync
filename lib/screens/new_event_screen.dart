@@ -1,21 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../l10n/app_i18n.dart';
+import '../viewmodels/screens/new_event_view_model.dart';
 import 'home_screen.dart';
 
 class NewEventScreen extends StatefulWidget {
-  const NewEventScreen({super.key});
+  final String? familyId;
+  final String? petId;
+  final String? eventId;
+  final Map<String, dynamic>? initialEventData;
+
+  const NewEventScreen({
+    super.key,
+    this.familyId,
+    this.petId,
+    this.eventId,
+    this.initialEventData,
+  });
 
   @override
   State<NewEventScreen> createState() => _NewEventScreenState();
 }
 
 class _NewEventScreenState extends State<NewEventScreen> {
+  final NewEventViewModel _viewModel = NewEventViewModel();
+
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   int _selectedCategory = 1;
+  int _selectedRecurrence = 0;
+  final TextEditingController _customDaysController = TextEditingController(text: '2');
+  bool _isSaving = false;
 
   static const Color _bg = Color(0xFF060E20);
   static const Color _surface = Color(0xFF192540);
@@ -25,20 +44,84 @@ class _NewEventScreenState extends State<NewEventScreen> {
 
   final List<_CategoryItem> _categories = const [
     _CategoryItem(Icons.medical_services_rounded, 'Vet', Color(0xFFE8AAFF)),
+    _CategoryItem(Icons.vaccines_rounded, 'Vaccines', Color(0xFFE8AAFF)),
     _CategoryItem(Icons.directions_walk_rounded, 'Walk', Color(0xFF74B1FF)),
     _CategoryItem(Icons.content_cut_rounded, 'Grooming', Color(0xFF82C2FF)),
     _CategoryItem(Icons.restaurant_rounded, 'Food', Color(0xFF74B1FF)),
     _CategoryItem(Icons.medication_rounded, 'Flea Pipette', Color(0xFFFF7D7D)),
+    _CategoryItem(Icons.local_pharmacy_rounded, 'Medications', Color(0xFF95DEBA)),
     _CategoryItem(Icons.inventory_2_rounded, 'Food\nOpening', Color(0xFFE8AAFF)),
     _CategoryItem(Icons.cookie_rounded, 'Treats', Color(0xFF74B1FF)),
     _CategoryItem(Icons.shopping_bag_rounded, 'Bag\nOpening', Color(0xFF8DB6FF)),
     _CategoryItem(Icons.cleaning_services_rounded, 'Wet Wipes', Color(0xFF74B1FF)),
   ];
 
+  static const List<_RecurrenceItem> _recurrenceOptions = [
+    _RecurrenceItem('No Repeat', 'none'),
+    _RecurrenceItem('Day by Day', 'daily'),
+    _RecurrenceItem('Month by Month', 'monthly'),
+    _RecurrenceItem('Year by Year', 'yearly'),
+    _RecurrenceItem('Custom (Days)', 'custom_days'),
+  ];
+
+  bool get _isEditing => widget.eventId != null && widget.eventId!.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrateInitialValues();
+  }
+
+  void _hydrateInitialValues() {
+    final data = widget.initialEventData;
+    if (data == null) {
+      return;
+    }
+
+    final title = (data['title'] as String?)?.trim();
+    if (title != null && title.isNotEmpty) {
+      _titleController.text = title;
+    }
+
+    final note = (data['note'] as String?)?.trim();
+    if (note != null && note.isNotEmpty) {
+      _noteController.text = note;
+    }
+
+    final ts = data['scheduled_at'];
+    if (ts is Timestamp) {
+      final dt = ts.toDate();
+      _selectedDate = DateTime(dt.year, dt.month, dt.day);
+      _selectedTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+    }
+
+    final category = ((data['category'] as String?) ?? '').trim().toLowerCase();
+    if (category.isNotEmpty) {
+      final idx = _categories.indexWhere(
+        (item) => item.label.replaceAll('\n', ' ').toLowerCase() == category,
+      );
+      if (idx >= 0) {
+        _selectedCategory = idx;
+      }
+    }
+
+    final recurrence = ((data['recurrence'] as String?) ?? 'none').trim().toLowerCase();
+    final recurrenceIndex = _recurrenceOptions.indexWhere((item) => item.value == recurrence);
+    if (recurrenceIndex >= 0) {
+      _selectedRecurrence = recurrenceIndex;
+    }
+
+    final interval = data['recurrence_interval_days'];
+    if (interval is int && interval > 0) {
+      _customDaysController.text = interval.toString();
+    }
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
     _noteController.dispose();
+    _customDaysController.dispose();
     super.dispose();
   }
 
@@ -81,13 +164,190 @@ class _NewEventScreenState extends State<NewEventScreen> {
     );
   }
 
+  Future<String?> _resolveFamilyId() async {
+    if (widget.familyId != null && widget.familyId!.trim().isNotEmpty) {
+      return widget.familyId!.trim();
+    }
+
+    final families = await _viewModel.loadFamiliesForCurrentUser();
+    if (families.isEmpty) {
+      return null;
+    }
+
+    return families.first.id;
+  }
+
+  Future<String?> _resolvePetId(String familyId) async {
+    final initialPetId = (widget.initialEventData?['pet_id'] as String?)?.trim();
+    if (initialPetId != null && initialPetId.isNotEmpty) {
+      return initialPetId;
+    }
+
+    if (widget.petId != null && widget.petId!.trim().isNotEmpty) {
+      return widget.petId!.trim();
+    }
+
+    final pets = await _viewModel.loadPets(familyId);
+    if (pets.isEmpty) {
+      return null;
+    }
+
+    return pets.first.id;
+  }
+
+  Future<void> _saveEvent() async {
+    if (_isSaving) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final customRecurrenceError = context.tr('For custom recurrence, enter a number greater than 0.');
+
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('Enter a title for the event.'))),
+      );
+      return;
+    }
+
+    if (_selectedDate == null || _selectedTime == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('Select event date and time.'))),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final familyId = await _resolveFamilyId();
+      if (familyId == null) {
+        if (!mounted) return;
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          SnackBar(content: Text(context.tr('First create a family to save events.'))),
+        );
+        return;
+      }
+
+      final petId = await _resolvePetId(familyId);
+      if (petId == null) {
+        if (!mounted) return;
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          SnackBar(content: Text(context.tr('You need at least one pet to create events.'))),
+        );
+        return;
+      }
+
+      final date = _selectedDate!;
+      final time = _selectedTime!;
+      final scheduledAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+
+      final category = _categories[_selectedCategory].label.replaceAll('\n', ' ').toLowerCase();
+      final recurrence = _recurrenceOptions[_selectedRecurrence].value;
+      final recurrenceIntervalDays = recurrence == 'custom_days'
+          ? int.tryParse(_customDaysController.text.trim()) ?? 0
+          : 1;
+
+      if (recurrence == 'custom_days' && recurrenceIntervalDays < 1) {
+        setState(() {
+          _isSaving = false;
+        });
+        messenger.showSnackBar(
+          SnackBar(content: Text(customRecurrenceError)),
+        );
+        return;
+      }
+
+      if (_isEditing) {
+        await _viewModel.updateEvent(
+          familyId: familyId,
+          eventId: widget.eventId!.trim(),
+          petId: petId,
+          title: title,
+          scheduledAt: scheduledAt,
+          note: _noteController.text.trim(),
+          category: category,
+          recurrence: recurrence,
+          recurrenceIntervalDays: recurrenceIntervalDays,
+        );
+      } else {
+        await _viewModel.addEvent(
+          familyId: familyId,
+          petId: petId,
+          title: title,
+          scheduledAt: scheduledAt,
+          note: _noteController.text.trim(),
+          category: category,
+          recurrence: recurrence,
+          recurrenceIntervalDays: recurrenceIntervalDays,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            _isEditing
+                ? context.tr('Changes saved successfully')
+                : context.tr('Event saved successfully.'),
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+
+      if (e.code == 'permission-denied') {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              context.tr('You do not have permission to write events in this family. Check Firestore rules and membership.'),
+            ),
+          ),
+        );
+        return;
+      }
+
+      messenger.showSnackBar(
+        SnackBar(content: Text('${context.tr('Could not save event:')} ${e.message ?? e.code}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text('${context.tr('Could not save event:')} $e')),
+      );
+    }
+  }
+
   String _dateLabel() {
     if (_selectedDate == null) {
-      return 'mm/dd/yyyy';
+      return 'dd/mm/yyyy';
     }
 
     final d = _selectedDate!;
-    return '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}/${d.year}';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
   String _timeLabel() {
@@ -141,8 +401,8 @@ class _NewEventScreenState extends State<NewEventScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Add Event',
+                        Text(
+                          _isEditing ? context.tr('Edit Event') : context.tr('Add Event'),
                           style: TextStyle(
                             color: _textMain,
                             fontSize: 44,
@@ -151,24 +411,24 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Schedule a new activity for your furry companion.',
-                          style: TextStyle(
+                        Text(
+                          context.tr('Schedule a new activity for your furry companion.'),
+                          style: const TextStyle(
                             color: _textMuted,
                             fontSize: 16,
                             height: 1.45,
                           ),
                         ),
                         const SizedBox(height: 24),
-                        const _FieldLabel('EVENT TITLE'),
+                        _FieldLabel(context.tr('EVENT TITLE')),
                         const SizedBox(height: 8),
                         _InputField(
                           controller: _titleController,
-                          hint: 'e.g. Morning Promenade',
+                          hint: context.tr('e.g. Morning Promenade'),
                           focused: true,
                         ),
                         const SizedBox(height: 18),
-                        const _FieldLabel('DATE'),
+                        _FieldLabel(context.tr('DATE')),
                         const SizedBox(height: 8),
                         _ActionField(
                           label: _dateLabel(),
@@ -176,15 +436,65 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           onTap: _pickDate,
                         ),
                         const SizedBox(height: 18),
-                        const _FieldLabel('TIME'),
+                        _FieldLabel(context.tr('TIME')),
                         const SizedBox(height: 8),
                         _ActionField(
                           label: _timeLabel(),
                           icon: Icons.schedule,
                           onTap: _pickTime,
                         ),
+                        const SizedBox(height: 18),
+                        _FieldLabel(context.tr('REPEAT')),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(_recurrenceOptions.length, (index) {
+                            final item = _recurrenceOptions[index];
+                            final selected = _selectedRecurrence == index;
+
+                            return InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedRecurrence = index;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: selected ? const Color(0xFF27446E) : _surface,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: selected
+                                      ? Border.all(color: const Color(0xFF74B1FF), width: 1)
+                                      : null,
+                                ),
+                                child: Text(
+                                  context.tr(item.label),
+                                  style: TextStyle(
+                                    color:
+                                        selected ? const Color(0xFFDEE5FF) : const Color(0xFFBAC7E0),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        if (_recurrenceOptions[_selectedRecurrence].value == 'custom_days') ...[
+                          const SizedBox(height: 10),
+                          _InputField(
+                            controller: _customDaysController,
+                            hint: context.tr('Every how many days? (e.g. 3)'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
                         const SizedBox(height: 20),
-                        const _FieldLabel('CATEGORY'),
+                        _FieldLabel(context.tr('CATEGORY')),
                         const SizedBox(height: 10),
                         GridView.builder(
                           shrinkWrap: true,
@@ -221,7 +531,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                     Icon(item.icon, color: item.color, size: 24),
                                     const SizedBox(height: 8),
                                     Text(
-                                      item.label,
+                                      context.tr(item.label),
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: Color(0xFFC5CEE2),
@@ -280,9 +590,9 @@ class _NewEventScreenState extends State<NewEventScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Note for Co-Owners',
-                                style: TextStyle(
+                              Text(
+                                context.tr('Note for Co-Owners'),
+                                style: const TextStyle(
                                   color: _textMain,
                                   fontSize: 24,
                                   fontWeight: FontWeight.w600,
@@ -293,17 +603,17 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                 controller: _noteController,
                                 maxLines: 2,
                                 style: const TextStyle(color: Color(0xFFCED7EC)),
-                                decoration: const InputDecoration(
-                                  hintText: 'Any specific instructions for this event?',
+                                decoration: InputDecoration(
+                                  hintText: context.tr('Any specific instructions for this event?'),
                                   hintStyle: TextStyle(color: Color(0xFF5E6D8B)),
                                   border: InputBorder.none,
                                   isCollapsed: true,
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              const Row(
+                              Row(
                                 children: [
-                                  CircleAvatar(
+                                  const CircleAvatar(
                                     radius: 12,
                                     backgroundColor: Color(0xFFE8AAFF),
                                     child: Text(
@@ -315,10 +625,10 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                       ),
                                     ),
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    'CREATED BY YOU',
-                                    style: TextStyle(
+                                    context.tr('CREATED BY YOU'),
+                                    style: const TextStyle(
                                       color: Color(0xFF6A7894),
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
@@ -348,9 +658,7 @@ class _NewEventScreenState extends State<NewEventScreen> {
                             ],
                           ),
                           child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
+                            onPressed: _isSaving ? null : _saveEvent,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.transparent,
                               shadowColor: Colors.transparent,
@@ -364,7 +672,16 @@ class _NewEventScreenState extends State<NewEventScreen> {
                                 fontSize: 18,
                               ),
                             ),
-                            child: const Text('Save Event'),
+                            child: _isSaving
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: Color(0xFF0A2550),
+                                    ),
+                                  )
+                                : Text(_isEditing ? context.tr('Save Changes') : context.tr('Save Event')),
                           ),
                         ),
                       ],
@@ -442,11 +759,13 @@ class _InputField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final bool focused;
+  final TextInputType? keyboardType;
 
   const _InputField({
     required this.controller,
     required this.hint,
     this.focused = false,
+    this.keyboardType,
   });
 
   @override
@@ -467,6 +786,7 @@ class _InputField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
+        keyboardType: keyboardType,
         style: const TextStyle(color: Color(0xFFCED7EC), fontSize: 16),
         decoration: InputDecoration(
           hintText: hint,
@@ -538,25 +858,25 @@ class _NewEventBottomBar extends StatelessWidget {
         children: [
           _NavItem(
             icon: Icons.home_rounded,
-            label: 'HOME',
+            label: context.tr('HOME'),
             selected: false,
             onTap: () => onTap(0),
           ),
           _NavItem(
             icon: Icons.calendar_today_rounded,
-            label: 'CALENDAR',
+            label: context.tr('CALENDAR'),
             selected: true,
             onTap: () => onTap(1),
           ),
           _NavItem(
             icon: Icons.groups_rounded,
-            label: 'FAMILY',
+            label: context.tr('FAMILY'),
             selected: false,
             onTap: () => onTap(2),
           ),
           _NavItem(
             icon: Icons.person_rounded,
-            label: 'PROFILE',
+            label: context.tr('PROFILE'),
             selected: false,
             onTap: () => onTap(3),
           ),
@@ -600,7 +920,7 @@ class _NavItem extends StatelessWidget {
               Icon(icon, color: fg, size: 20),
               const SizedBox(height: 4),
               Text(
-                label,
+                  context.tr(label),
                 style: TextStyle(
                   color: fg,
                   fontSize: 11,
@@ -622,4 +942,11 @@ class _CategoryItem {
   final Color color;
 
   const _CategoryItem(this.icon, this.label, this.color);
+}
+
+class _RecurrenceItem {
+  final String label;
+  final String value;
+
+  const _RecurrenceItem(this.label, this.value);
 }
